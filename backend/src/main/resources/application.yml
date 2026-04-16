@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: kin-keeper
+
+server:
+  port: 8080
+
+firebase:
+  project-id: ${FIREBASE_PROJECT_ID:}
+  credentials-path: ${FIREBASE_CREDENTIALS_PATH:}
+
+google:
+  drive:
+    application-name: kin-keeper
+
+anthropic:
+  default-model: claude-sonnet-4-20250514
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
