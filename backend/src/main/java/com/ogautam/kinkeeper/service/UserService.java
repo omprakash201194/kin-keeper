@@ -42,7 +42,7 @@ public class UserService {
                     .update(Map.of(
                             "displayName", principal.name() != null ? principal.name() : "",
                             "photoUrl", principal.picture() != null ? principal.picture() : "",
-                            "updatedAt", Instant.now().toString()
+                            "updatedAt", Instant.now()
                     )).get();
             log.info("Updated user profile for {}", principal.email());
         } else {
@@ -81,7 +81,7 @@ public class UserService {
         String derivedRole = uid.equals(adminUid) ? ROLE_ADMIN : ROLE_VIEWER;
         firestore.collection(USERS_COLLECTION).document(uid).update(Map.of(
                 "role", derivedRole,
-                "updatedAt", Instant.now().toString()
+                "updatedAt", Instant.now()
         )).get();
         log.info("Backfilled role={} for user {}", derivedRole, uid);
     }
@@ -100,7 +100,7 @@ public class UserService {
                 .update(Map.of(
                         "familyId", invite.getFamilyId(),
                         "role", invite.getRole() != null ? invite.getRole() : ROLE_VIEWER,
-                        "updatedAt", Instant.now().toString()
+                        "updatedAt", Instant.now()
                 )).get();
         inviteService.markAccepted(invite.getId());
         log.info("Auto-accepted invite {} for {} into family {}", invite.getId(), email, invite.getFamilyId());
@@ -144,7 +144,7 @@ public class UserService {
         firestore.collection(USERS_COLLECTION).document(uid)
                 .update(Map.of(
                         "claudeApiKeyEncrypted", encrypted,
-                        "updatedAt", Instant.now().toString()
+                        "updatedAt", Instant.now()
                 )).get();
         log.info("Saved Claude API key for user {}", uid);
     }
@@ -160,7 +160,7 @@ public class UserService {
     public void deleteApiKey(String uid) throws ExecutionException, InterruptedException {
         Map<String, Object> updates = new HashMap<>();
         updates.put("claudeApiKeyEncrypted", FieldValue.delete());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", Instant.now());
         firestore.collection(USERS_COLLECTION).document(uid).update(updates).get();
         log.info("Deleted Claude API key for user {}", uid);
     }
@@ -180,7 +180,7 @@ public class UserService {
         firestore.collection(USERS_COLLECTION).document(uid)
                 .update(Map.of(
                         "driveRefreshTokenEncrypted", encrypted,
-                        "updatedAt", Instant.now().toString()
+                        "updatedAt", Instant.now()
                 )).get();
         log.info("Saved Drive refresh token for user {}", uid);
     }
@@ -196,7 +196,7 @@ public class UserService {
     public void deleteDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
         Map<String, Object> updates = new HashMap<>();
         updates.put("driveRefreshTokenEncrypted", FieldValue.delete());
-        updates.put("updatedAt", Instant.now().toString());
+        updates.put("updatedAt", Instant.now());
         firestore.collection(USERS_COLLECTION).document(uid).update(updates).get();
         log.info("Deleted Drive refresh token for user {}", uid);
     }

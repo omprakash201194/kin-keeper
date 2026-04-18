@@ -52,7 +52,7 @@ public class FamilyService {
                 .update(Map.of(
                         "familyId", ref.getId(),
                         "role", UserService.ROLE_ADMIN,
-                        "updatedAt", Instant.now().toString()
+                        "updatedAt", Instant.now()
                 )).get();
 
         categoryService.seedDefaults(ref.getId());
