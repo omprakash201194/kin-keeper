@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Send } from 'lucide-react'
+import apiClient from '@/services/api'
 
 interface Message {
   id: string
@@ -11,19 +12,44 @@ interface Message {
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
 
-  const handleSend = () => {
-    if (!input.trim()) return
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
+  }, [messages, sending])
+
+  async function handleSend() {
+    const text = input.trim()
+    if (!text || sending) return
 
     const userMsg: Message = {
-      id: Date.now().toString(),
+      id: `u-${Date.now()}`,
       role: 'user',
-      content: input,
+      content: text,
     }
-    setMessages((prev) => [...prev, userMsg])
+    const nextMessages = [...messages, userMsg]
+    setMessages(nextMessages)
     setInput('')
+    setError(null)
+    setSending(true)
 
-    // TODO: call /api/chat/message and append assistant response
+    try {
+      const history = nextMessages.slice(0, -1).map((m) => ({ role: m.role, text: m.content }))
+      const res = await apiClient.post<{ reply: string }>('/chat/message', {
+        message: text,
+        history,
+      })
+      setMessages((prev) => [
+        ...prev,
+        { id: `a-${Date.now()}`, role: 'assistant', content: res.data.reply },
+      ])
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Chat failed. Have you added your Claude API key in Settings?')
+    } finally {
+      setSending(false)
+    }
   }
 
   return (
@@ -31,16 +57,15 @@ export default function ChatPage() {
       <div className="border-b px-6 py-4">
         <h1 className="text-xl font-semibold">Chat</h1>
         <p className="text-sm text-muted-foreground">
-          Ask me to find, upload, or organize your documents.
+          Ask me to find, summarize, or organize your documents.
         </p>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
-        {messages.length === 0 && (
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">
+        {messages.length === 0 && !sending && (
           <div className="text-center text-muted-foreground mt-20">
             <p className="text-lg font-medium mb-2">No messages yet</p>
-            <p className="text-sm">Try: "Find my Aadhaar card" or "Upload this to medical records"</p>
+            <p className="text-sm">Try: "List my family members" or "Find my Aadhaar"</p>
           </div>
         )}
         {messages.map((msg) => (
@@ -49,7 +74,7 @@ export default function ChatPage() {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${
+              className={`max-w-[70%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
                 msg.role === 'user'
                   ? 'bg-primary text-primary-foreground'
                   : 'bg-muted text-foreground'
@@ -59,9 +84,20 @@ export default function ChatPage() {
             </div>
           </div>
         ))}
+        {sending && (
+          <div className="flex justify-start">
+            <div className="bg-muted text-foreground rounded-lg px-4 py-2 text-sm italic">
+              Thinking…
+            </div>
+          </div>
+        )}
+        {error && (
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
       </div>
 
-      {/* Input */}
       <div className="border-t p-4">
         <div className="flex gap-2">
           <input
@@ -70,9 +106,10 @@ export default function ChatPage() {
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Ask about your documents..."
-            className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            disabled={sending}
+            className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
           />
-          <Button onClick={handleSend} size="icon">
+          <Button onClick={handleSend} size="icon" disabled={sending || !input.trim()}>
             <Send className="w-4 h-4" />
           </Button>
         </div>

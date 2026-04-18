@@ -99,6 +99,52 @@ public class DocumentService {
         return driveService.downloadFile(family.getAdminUid(), doc.getDriveFileId());
     }
 
+    public List<Document> searchDocuments(FirebaseUserPrincipal principal,
+                                          String query,
+                                          String memberId,
+                                          String categoryId)
+            throws ExecutionException, InterruptedException {
+        List<Document> all = listDocuments(principal, memberId, categoryId);
+        if (query == null || query.isBlank()) {
+            return all;
+        }
+        String needle = query.toLowerCase();
+        List<Document> hits = new ArrayList<>();
+        for (Document d : all) {
+            if (contains(d.getFileName(), needle)
+                    || contains(d.getNotes(), needle)
+                    || tagsContain(d.getTags(), needle)) {
+                hits.add(d);
+            }
+        }
+        return hits;
+    }
+
+    public Document recategorizeDocument(FirebaseUserPrincipal principal, String id, String newCategoryId)
+            throws ExecutionException, InterruptedException {
+        Document doc = loadAndAuthorize(principal, id);
+        if (newCategoryId == null || newCategoryId.isBlank()) {
+            throw new IllegalArgumentException("categoryId is required");
+        }
+        firestore.collection(DOCUMENTS_COLLECTION).document(id)
+                .update("categoryId", newCategoryId).get();
+        doc.setCategoryId(newCategoryId);
+        log.info("Recategorized document {} to {}", id, newCategoryId);
+        return doc;
+    }
+
+    private static boolean contains(String haystack, String needle) {
+        return haystack != null && haystack.toLowerCase().contains(needle);
+    }
+
+    private static boolean tagsContain(List<String> tags, String needle) {
+        if (tags == null) return false;
+        for (String t : tags) {
+            if (t != null && t.toLowerCase().contains(needle)) return true;
+        }
+        return false;
+    }
+
     public void deleteDocument(FirebaseUserPrincipal principal, String id)
             throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
         Document doc = loadAndAuthorize(principal, id);

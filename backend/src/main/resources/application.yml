@@ -18,7 +18,7 @@ google:
     application-name: kin-keeper
 
 anthropic:
-  default-model: claude-sonnet-4-20250514
+  default-model: claude-sonnet-4-6
 
 management:
   endpoints:
