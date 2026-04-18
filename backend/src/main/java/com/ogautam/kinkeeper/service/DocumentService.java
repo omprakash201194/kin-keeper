@@ -8,6 +8,7 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.ogautam.kinkeeper.drive.DriveService;
 import com.ogautam.kinkeeper.model.Document;
 import com.ogautam.kinkeeper.model.Family;
+import com.ogautam.kinkeeper.model.LinkRef;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -44,7 +45,8 @@ public class DocumentService {
                                    String memberId,
                                    String categoryId,
                                    String notes,
-                                   List<String> labels)
+                                   List<String> labels,
+                                   List<LinkRef> links)
             throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
         Family family = requireFamily(principal);
         String driveFileId = driveService.uploadFile(family.getAdminUid(), fileName, mimeType, content);
@@ -61,11 +63,22 @@ public class DocumentService {
                 .driveFileId(driveFileId)
                 .notes(notes)
                 .tags(labels != null ? labels : List.of())
+                .links(links != null ? links : List.of())
                 .uploadedBy(principal.uid())
                 .uploadedAt(Instant.now())
                 .build();
         ref.set(doc).get();
         log.info("Uploaded document {} ({}) for family {} labels={}", ref.getId(), fileName, family.getId(), doc.getTags());
+        return doc;
+    }
+
+    public Document setLinks(FirebaseUserPrincipal principal, String id, List<LinkRef> links)
+            throws ExecutionException, InterruptedException {
+        Document doc = loadAndAuthorize(principal, id);
+        List<LinkRef> normalized = links != null ? links : List.of();
+        firestore.collection(DOCUMENTS_COLLECTION).document(id).update("links", normalized).get();
+        doc.setLinks(normalized);
+        log.info("Updated links on document {} to {} entries", id, normalized.size());
         return doc;
     }
 

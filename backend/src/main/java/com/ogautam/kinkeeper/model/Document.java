@@ -24,6 +24,7 @@ public class Document {
     private String driveFolderId;
     private String notes;
     private List<String> tags;
+    private List<LinkRef> links;     // additional subjects beyond memberId (contacts, assets)
     private String uploadedBy;
     private Instant uploadedAt;
 }

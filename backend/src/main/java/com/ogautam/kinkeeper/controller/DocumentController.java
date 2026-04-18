@@ -1,6 +1,9 @@
 package com.ogautam.kinkeeper.controller;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ogautam.kinkeeper.model.Document;
+import com.ogautam.kinkeeper.model.LinkRef;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.UserService;
@@ -23,10 +26,12 @@ public class DocumentController {
 
     private final DocumentService documentService;
     private final UserService userService;
+    private final ObjectMapper objectMapper;
 
-    public DocumentController(DocumentService documentService, UserService userService) {
+    public DocumentController(DocumentService documentService, UserService userService, ObjectMapper objectMapper) {
         this.documentService = documentService;
         this.userService = userService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -43,13 +48,22 @@ public class DocumentController {
     @PostMapping("/upload")
     public ResponseEntity<?> upload(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                     @RequestParam("file") MultipartFile file,
-                                    @RequestParam String memberId,
+                                    @RequestParam(required = false) String memberId,
                                     @RequestParam String categoryId,
                                     @RequestParam(required = false) String notes,
-                                    @RequestParam(required = false) String labels) throws Exception {
+                                    @RequestParam(required = false) String labels,
+                                    @RequestParam(required = false) String links) throws Exception {
         userService.requireAdmin(principal.uid());
         if (file.isEmpty()) {
             throw new IllegalArgumentException("file is empty");
+        }
+        List<LinkRef> parsedLinks = parseLinks(links);
+        // Backward-compat: when memberId is passed, ensure it also appears in links.
+        if (memberId != null && !memberId.isBlank()
+                && parsedLinks.stream().noneMatch(l -> "MEMBER".equalsIgnoreCase(String.valueOf(l.getType()))
+                        && memberId.equals(l.getId()))) {
+            parsedLinks = new java.util.ArrayList<>(parsedLinks);
+            parsedLinks.add(LinkRef.builder().type(com.ogautam.kinkeeper.model.LinkType.MEMBER).id(memberId).build());
         }
         String mimeType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
         Document doc = documentService.uploadDocument(
@@ -61,8 +75,30 @@ public class DocumentController {
                 memberId,
                 categoryId,
                 notes,
-                parseLabels(labels));
+                parseLabels(labels),
+                parsedLinks);
         return ResponseEntity.ok(doc);
+    }
+
+    @PutMapping("/{id}/links")
+    public ResponseEntity<?> updateLinks(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                         @PathVariable String id,
+                                         @RequestBody Map<String, Object> body) throws Exception {
+        userService.requireAdmin(principal.uid());
+        Object raw = body.get("links");
+        List<LinkRef> links = raw == null
+                ? List.of()
+                : objectMapper.convertValue(raw, new TypeReference<List<LinkRef>>() {});
+        return ResponseEntity.ok(documentService.setLinks(principal, id, links));
+    }
+
+    private List<LinkRef> parseLinks(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<LinkRef>>() {});
+        } catch (Exception e) {
+            throw new IllegalArgumentException("links must be a JSON array of {type, id}: " + e.getMessage());
+        }
     }
 
     @PutMapping("/{id}/labels")

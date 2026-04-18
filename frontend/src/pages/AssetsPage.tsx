@@ -1,0 +1,254 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Button } from '@/components/ui/button'
+import { Plus, Trash2, Home, Car, Cpu, Shield } from 'lucide-react'
+import apiClient from '@/services/api'
+import { useProfile } from '@/hooks/useProfile'
+
+type AssetType = 'HOME' | 'VEHICLE' | 'APPLIANCE' | 'POLICY'
+
+type Asset = {
+  id: string
+  type: AssetType
+  name: string
+  make?: string
+  model?: string
+  identifier?: string
+  address?: string
+  provider?: string
+  purchaseDate?: string
+  expiryDate?: string
+  frequency?: string
+  amount?: number
+  odometerKm?: number
+  notes?: string
+}
+
+const TYPE_LABEL: Record<AssetType, string> = {
+  HOME: 'Homes',
+  VEHICLE: 'Vehicles',
+  APPLIANCE: 'Appliances',
+  POLICY: 'Policies',
+}
+
+const TYPE_ICON: Record<AssetType, React.ComponentType<{ className?: string }>> = {
+  HOME: Home,
+  VEHICLE: Car,
+  APPLIANCE: Cpu,
+  POLICY: Shield,
+}
+
+const EMPTY_FORM = {
+  type: 'HOME' as AssetType,
+  name: '',
+  make: '',
+  model: '',
+  identifier: '',
+  address: '',
+  provider: '',
+  purchaseDate: '',
+  expiryDate: '',
+  frequency: '',
+  amount: '',
+  odometerKm: '',
+  notes: '',
+}
+
+export default function AssetsPage() {
+  const { isAdmin } = useProfile()
+  const [assets, setAssets] = useState<Asset[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState(EMPTY_FORM)
+  const [saving, setSaving] = useState(false)
+
+  useEffect(() => { void load() }, [])
+
+  async function load() {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await apiClient.get<Asset[]>('/assets')
+      setAssets(res.data)
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to load assets')
+    } finally { setLoading(false) }
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!form.name.trim()) return
+    setSaving(true)
+    setError(null)
+    try {
+      const body: Record<string, unknown> = { type: form.type, name: form.name.trim() }
+      for (const k of ['make', 'model', 'identifier', 'address', 'provider', 'purchaseDate',
+                        'expiryDate', 'frequency', 'notes'] as const) {
+        const v = form[k]
+        if (v && v.trim()) body[k] = v.trim()
+      }
+      if (form.amount && form.amount.trim()) body.amount = Number(form.amount)
+      if (form.odometerKm && form.odometerKm.trim()) body.odometerKm = parseInt(form.odometerKm, 10)
+      await apiClient.post('/assets', body)
+      setForm(EMPTY_FORM)
+      setShowAdd(false)
+      await load()
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to save asset')
+    } finally { setSaving(false) }
+  }
+
+  async function handleDelete(a: Asset) {
+    if (!confirm(`Delete "${a.name}"?`)) return
+    try {
+      await apiClient.delete(`/assets/${a.id}`)
+      await load()
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to delete')
+    }
+  }
+
+  const grouped = useMemo(() => {
+    const g: Record<AssetType, Asset[]> = { HOME: [], VEHICLE: [], APPLIANCE: [], POLICY: [] }
+    for (const a of assets) g[a.type]?.push(a)
+    return g
+  }, [assets])
+
+  if (loading) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
+
+  return (
+    <div className="p-6 max-w-3xl">
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-xl font-semibold">Assets</h1>
+          <p className="text-sm text-muted-foreground">
+            Things you own that have documents: homes, vehicles, appliances, policies.
+          </p>
+        </div>
+        {isAdmin && (
+          <Button onClick={() => setShowAdd((v) => !v)}>
+            <Plus className="w-4 h-4 mr-2" />
+            {showAdd ? 'Cancel' : 'Add Asset'}
+          </Button>
+        )}
+      </div>
+
+      {showAdd && isAdmin && (
+        <form onSubmit={handleSubmit} className="mb-6 space-y-3 border rounded-md p-4">
+          <div className="grid grid-cols-2 gap-2">
+            <select className="rounded-md border px-3 py-2 text-sm"
+                    value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as AssetType })}>
+              <option value="HOME">Home</option>
+              <option value="VEHICLE">Vehicle</option>
+              <option value="APPLIANCE">Appliance</option>
+              <option value="POLICY">Policy</option>
+            </select>
+            <input className="rounded-md border px-3 py-2 text-sm" placeholder="Name" required
+                   value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+          </div>
+
+          {form.type === 'HOME' && (
+            <textarea className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Address" rows={2}
+                      value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+          )}
+
+          {(form.type === 'VEHICLE' || form.type === 'APPLIANCE') && (
+            <div className="grid grid-cols-3 gap-2">
+              <input className="rounded-md border px-3 py-2 text-sm" placeholder="Make"
+                     value={form.make} onChange={(e) => setForm({ ...form, make: e.target.value })} />
+              <input className="rounded-md border px-3 py-2 text-sm" placeholder="Model"
+                     value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} />
+              <input className="rounded-md border px-3 py-2 text-sm"
+                     placeholder={form.type === 'VEHICLE' ? 'Reg / VIN' : 'Serial #'}
+                     value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
+            </div>
+          )}
+
+          {form.type === 'VEHICLE' && (
+            <input className="w-full rounded-md border px-3 py-2 text-sm" type="number"
+                   placeholder="Odometer (km)"
+                   value={form.odometerKm} onChange={(e) => setForm({ ...form, odometerKm: e.target.value })} />
+          )}
+
+          {form.type === 'POLICY' && (
+            <>
+              <div className="grid grid-cols-2 gap-2">
+                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Provider (insurer/bank)"
+                       value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} />
+                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Policy #"
+                       value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <select className="rounded-md border px-3 py-2 text-sm"
+                        value={form.frequency} onChange={(e) => setForm({ ...form, frequency: e.target.value })}>
+                  <option value="">Frequency…</option>
+                  <option value="MONTHLY">Monthly</option>
+                  <option value="QUARTERLY">Quarterly</option>
+                  <option value="YEARLY">Yearly</option>
+                </select>
+                <input className="rounded-md border px-3 py-2 text-sm" type="number"
+                       placeholder="Premium amount"
+                       value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
+              </div>
+            </>
+          )}
+
+          <div className="grid grid-cols-2 gap-2">
+            <input className="rounded-md border px-3 py-2 text-sm" type="date"
+                   placeholder="Purchase / start date"
+                   value={form.purchaseDate} onChange={(e) => setForm({ ...form, purchaseDate: e.target.value })} />
+            <input className="rounded-md border px-3 py-2 text-sm" type="date"
+                   placeholder="Warranty / policy end"
+                   value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
+          </div>
+
+          <textarea className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Notes" rows={2}
+                    value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
+
+          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+        </form>
+      )}
+
+      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+
+      {assets.length === 0 ? (
+        <div className="py-12 text-center text-muted-foreground border rounded-md">No assets yet.</div>
+      ) : (
+        (['HOME', 'VEHICLE', 'APPLIANCE', 'POLICY'] as AssetType[]).map((t) => {
+          const list = grouped[t]
+          if (!list.length) return null
+          const Icon = TYPE_ICON[t]
+          return (
+            <section key={t} className="mb-6">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                <Icon className="w-4 h-4" />
+                {TYPE_LABEL[t]} <span className="font-normal normal-case">({list.length})</span>
+              </h2>
+              <ul className="divide-y border rounded-md">
+                {list.map((a) => (
+                  <li key={a.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{a.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {[a.make, a.model, a.identifier, a.provider, a.address,
+                          a.odometerKm ? `${a.odometerKm} km` : null,
+                          a.frequency, a.expiryDate ? `exp ${a.expiryDate}` : null]
+                          .filter(Boolean).join(' · ')}
+                      </p>
+                    </div>
+                    {isAdmin && (
+                      <Button variant="ghost" size="icon" onClick={() => handleDelete(a)} title="Delete">
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )
+        })
+      )}
+    </div>
+  )
+}

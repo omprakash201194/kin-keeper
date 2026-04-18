@@ -1,10 +1,14 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
+import { useReminderCount } from '@/hooks/useReminderCount'
 import {
   MessageSquare,
   FileText,
   FolderTree,
   Users,
+  UserCircle2,
+  Boxes,
+  Bell,
   Settings,
   LogOut,
   Shield,
@@ -19,6 +23,9 @@ const nav = [
   { to: '/documents',  label: 'Documents',  icon: FileText },
   { to: '/categories', label: 'Categories', icon: FolderTree },
   { to: '/members',    label: 'Members',    icon: Users },
+  { to: '/contacts',   label: 'Contacts',   icon: UserCircle2 },
+  { to: '/assets',     label: 'Assets',     icon: Boxes },
+  { to: '/reminders',  label: 'Reminders',  icon: Bell, badgeKey: 'reminders' as const },
   { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
 
@@ -26,6 +33,7 @@ export default function Layout() {
   const { user, signOut } = useAuth()
   const navigate = useNavigate()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const reminderCount = useReminderCount()
 
   const handleLogout = async () => {
     await signOut()
@@ -42,24 +50,33 @@ export default function Layout() {
 
       {/* Nav */}
       <nav className="flex-1 px-3 py-4 space-y-1">
-        {nav.map(({ to, label, icon: Icon }) => (
-          <NavLink
-            key={to}
-            to={to}
-            onClick={() => setSidebarOpen(false)}
-            className={({ isActive }) =>
-              clsx(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-emerald-600 text-white'
-                  : 'text-gray-400 hover:bg-gray-800 hover:text-white'
-              )
-            }
-          >
-            <Icon className="w-4 h-4" />
-            {label}
-          </NavLink>
-        ))}
+        {nav.map((item) => {
+          const Icon = item.icon
+          const showBadge = item.badgeKey === 'reminders' && reminderCount > 0
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              onClick={() => setSidebarOpen(false)}
+              className={({ isActive }) =>
+                clsx(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  isActive
+                    ? 'bg-emerald-600 text-white'
+                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                )
+              }
+            >
+              <Icon className="w-4 h-4" />
+              <span className="flex-1">{item.label}</span>
+              {showBadge && (
+                <span className="text-[11px] bg-red-500 text-white rounded-full px-1.5 py-0.5 min-w-[20px] text-center">
+                  {reminderCount > 99 ? '99+' : reminderCount}
+                </span>
+              )}
+            </NavLink>
+          )
+        })}
       </nav>
 
       {/* User + Logout */}

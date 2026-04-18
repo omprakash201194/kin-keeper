@@ -28,7 +28,8 @@ Everything goes through the Spring Boot backend — no direct Firestore or Drive
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Spring Boot 3.3.4, Java 21, Maven |
+| Backend | Spring Boot 3.4.4, Java 21, Maven |
+| Cache | Redis (shared homelab instance at `redis.homelab.svc.cluster.local:6379`) |
 | Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui |
 | Auth | Firebase Auth (Google provider) |
 | Metadata DB | Firestore (no local DB) |
@@ -70,25 +71,30 @@ cd frontend && docker build -t homelab/kin-keeper-frontend:1.0.0 .
 
 ```
 kin-keeper/
-├��─ backend/                        # Spring Boot API
-���   ├── pom.xml
+├── backend/                        # Spring Boot API
+│   ├── pom.xml
 │   └── src/main/java/com/ogautam/kinkeeper/
-│       ├── config/                 # Firebase, CORS config
+│       ├── config/                 # Firebase, CORS, CacheConfig (Redis)
 │       ├── security/               # Firebase token filter + Spring Security
-│       ├── controller/             # REST endpoints (auth, documents, family, chat, settings)
-│       ├��─ service/                # Business logic (Firestore reads/writes)
-│       ├── drive/                  # Google Drive API wrapper
-│       ├── agent/                  # Claude tool-use orchestration
-│       │   └── tools/              # Individual tool definitions for Claude
-│       ├── model/                  # POJOs: UserProfile, Family, FamilyMember, Document, Category
+│       ├── controller/             # REST endpoints
+│       ├── service/                # Business logic (Firestore reads/writes, Redis-cached)
+│       ├── drive/                  # Google Drive API wrapper + OAuth flow
+│       ├── crypto/                 # AES-GCM for API keys / refresh tokens
+│       ├── agent/                  # Claude tool-use orchestration + attachment staging
+│       ├── model/                  # POJOs: UserProfile, Family, FamilyMember, Contact,
+│       │                           #        Asset (+AssetType), Category, Document (+LinkRef,
+│       │                           #        LinkType), Invite, ChatSession, ChatMessage,
+│       │                           #        Reminder (+ReminderRecurrence)
 │       └── exception/              # Global error handler
-└── frontend/                       # React SPA
+└── frontend/                       # React PWA
     └── src/
-        ├── lib/                    # firebase.ts, utils.ts (cn helper)
-        ├── hooks/                  # useAuth
+        ├── lib/                    # firebase.ts, categoryTree.ts
+        ├── hooks/                  # useAuth, useProfile, useReminderCount
         ├── services/               # axios client with Firebase token interceptor
         ├── components/             # Layout, ProtectedRoute, shadcn ui/
-        └── pages/                  # ChatPage, DocumentsPage, MembersPage, SettingsPage, LoginPage
+        └── pages/                  # ChatPage, DocumentsPage, CategoriesPage, MembersPage,
+                                    # ContactsPage, AssetsPage, RemindersPage,
+                                    # SettingsPage, LoginPage
 ```
 
 ## Key API Endpoints
@@ -105,16 +111,58 @@ kin-keeper/
 | POST | `/api/family/members` | Yes | Add a family member (person) |
 | POST | `/api/family/invite` | Yes | Invite Google user to family |
 | PUT | `/api/settings/api-key` | Yes | Save encrypted Claude API key |
+| GET/POST/PUT/DELETE | `/api/contacts[/{id}]` | Yes | External contacts CRUD |
+| GET/POST/PUT/DELETE | `/api/assets[/{id}]` | Yes | Asset CRUD (HOME/VEHICLE/APPLIANCE/POLICY) |
+| GET/POST/PUT/DELETE | `/api/reminders[/{id}]` | Yes | Reminder CRUD |
+| POST | `/api/reminders/{id}/complete` | Yes | Mark complete (rolls recurrence forward) |
+| GET | `/api/reminders/count` | Yes | Badge count of open reminders due within 7 days |
 
 ## Firestore Collections
 
 ```
-users/{uid}           → UserProfile (email, displayName, familyId, claudeApiKeyEncrypted)
+users/{uid}           → UserProfile (email, displayName, familyId, role, claudeApiKeyEncrypted,
+                        driveRefreshTokenEncrypted, chatRetentionDays)
 families/{id}         → Family (name, adminUid)
 members/{id}          → FamilyMember (familyId, name, relationship, dateOfBirth)
-documents/{id}        → Document (familyId, memberId, categoryId, driveFileId, fileName, tags)
+contacts/{id}         → Contact (familyId, name, relationship, phone, email, notes)
+assets/{id}           → Asset (familyId, type: HOME|VEHICLE|APPLIANCE|POLICY, name, make,
+                        model, identifier, address, provider, purchaseDate, expiryDate,
+                        frequency, amount, odometerKm, ownerMemberIds, linkedAssetIds, notes)
+documents/{id}        → Document (familyId, memberId, categoryId, driveFileId, fileName,
+                        tags, links: List<LinkRef>, uploadedBy, uploadedAt)
 categories/{id}       → Category (familyId, name, parentId, isDefault)
+invites/{id}          → Invite (familyId, email, role, status, createdAt)
+chat_sessions/{id}    → ChatSession (userId, title, expiresAt, pendingAttachmentId)
+  /messages/{id}      → ChatMessage (role, content, createdAt)
+reminders/{id}        → Reminder (familyId, title, dueAt, recurrence, dueOdometerKm,
+                        recurrenceIntervalKm, linkedRefs: List<LinkRef>, completed)
 ```
+
+## Subject model
+
+Documents and reminders can link to any number of "subjects" via `LinkRef = {type, id}`
+where `type` is one of: `MEMBER`, `CONTACT`, `HOME`, `VEHICLE`, `APPLIANCE`, `POLICY`,
+`DOCUMENT`. A single document may link to several subjects at once — e.g. car insurance
+links both the policyholder `MEMBER` and the `VEHICLE` asset.
+
+For backward compatibility `Document.memberId` stays as the "primary member link"; new
+uploads populate both `memberId` and an entry in `links[]`. Reads that filter by
+`memberId` continue to work; multi-subject reads should iterate `links`.
+
+Assets are a unified entity with a `type` discriminator — only fields relevant to each
+type are populated:
+  - **HOME**:       `name`, `address`, `purchaseDate`, `ownerMemberIds`, `notes`
+  - **VEHICLE**:    `name`, `make`, `model`, `identifier` (reg/VIN), `purchaseDate`,
+                    `odometerKm`, `ownerMemberIds`, `notes`
+  - **APPLIANCE**:  `name`, `make`, `model`, `identifier` (serial), `purchaseDate`,
+                    `expiryDate` (warranty end), `ownerMemberIds`, `notes`
+  - **POLICY**:     `name`, `provider`, `identifier` (policy #), `purchaseDate` (start),
+                    `expiryDate` (end), `frequency`, `amount` (premium),
+                    `ownerMemberIds` (insureds), `linkedAssetIds` (covered assets)
+
+Reminders support date-based recurrence (`NONE`/`DAILY`/`WEEKLY`/`MONTHLY`/`QUARTERLY`/
+`HALF_YEARLY`/`YEARLY`) and an `ODOMETER` type for vehicle servicing (uses
+`dueOdometerKm` + `recurrenceIntervalKm` against a linked `VEHICLE`).
 
 ## Auth Flow
 
