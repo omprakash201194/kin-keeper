@@ -22,7 +22,10 @@ public class SettingsController {
 
     @GetMapping
     public ResponseEntity<?> get(@AuthenticationPrincipal FirebaseUserPrincipal principal) throws Exception {
-        return ResponseEntity.ok(Map.of("hasApiKey", userService.hasApiKey(principal.uid())));
+        return ResponseEntity.ok(Map.of(
+                "hasApiKey", userService.hasApiKey(principal.uid()),
+                "chatRetentionDays", userService.getChatRetentionDays(principal.uid())
+        ));
     }
 
     @PutMapping("/api-key")
@@ -40,5 +43,22 @@ public class SettingsController {
     public ResponseEntity<?> deleteApiKey(@AuthenticationPrincipal FirebaseUserPrincipal principal) throws Exception {
         userService.deleteApiKey(principal.uid());
         return ResponseEntity.ok(Map.of("status", "deleted"));
+    }
+
+    @PutMapping("/chat-retention")
+    public ResponseEntity<?> updateChatRetention(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                                 @RequestBody Map<String, Object> body) throws Exception {
+        Object raw = body.get("days");
+        if (raw == null) {
+            throw new IllegalArgumentException("days is required");
+        }
+        int days;
+        try {
+            days = raw instanceof Number n ? n.intValue() : Integer.parseInt(raw.toString());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("days must be an integer");
+        }
+        userService.saveChatRetentionDays(principal.uid(), days);
+        return ResponseEntity.ok(Map.of("status", "saved", "chatRetentionDays", days));
     }
 }

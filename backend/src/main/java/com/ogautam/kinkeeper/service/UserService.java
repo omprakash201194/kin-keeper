@@ -193,6 +193,31 @@ public class UserService {
         return cryptoService.decrypt(encrypted.toString());
     }
 
+    public int getChatRetentionDays(String uid) throws ExecutionException, InterruptedException {
+        DocumentSnapshot doc = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!doc.exists()) return ChatSessionService.DEFAULT_RETENTION_DAYS;
+        Object val = doc.get("chatRetentionDays");
+        if (val == null) return ChatSessionService.DEFAULT_RETENTION_DAYS;
+        try {
+            return Math.toIntExact(((Number) val).longValue());
+        } catch (Exception e) {
+            return ChatSessionService.DEFAULT_RETENTION_DAYS;
+        }
+    }
+
+    public void saveChatRetentionDays(String uid, int days) throws ExecutionException, InterruptedException {
+        if (days < ChatSessionService.MIN_RETENTION_DAYS || days > ChatSessionService.MAX_RETENTION_DAYS) {
+            throw new IllegalArgumentException("chatRetentionDays must be between "
+                    + ChatSessionService.MIN_RETENTION_DAYS + " and " + ChatSessionService.MAX_RETENTION_DAYS);
+        }
+        firestore.collection(USERS_COLLECTION).document(uid)
+                .update(Map.of(
+                        "chatRetentionDays", days,
+                        "updatedAt", Instant.now()
+                )).get();
+        log.info("Saved chatRetentionDays={} for user {}", days, uid);
+    }
+
     public void deleteDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
         Map<String, Object> updates = new HashMap<>();
         updates.put("driveRefreshTokenEncrypted", FieldValue.delete());

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
-import { Key, User, Cloud } from 'lucide-react'
+import { Key, User, Cloud, MessageSquare } from 'lucide-react'
 import apiClient from '@/services/api'
 
 export default function SettingsPage() {
@@ -15,6 +15,10 @@ export default function SettingsPage() {
   const [driveConnected, setDriveConnected] = useState(false)
   const [driveConfigured, setDriveConfigured] = useState(true)
   const [driveWorking, setDriveWorking] = useState(false)
+
+  const [chatRetentionDays, setChatRetentionDays] = useState<number>(7)
+  const [chatRetentionInput, setChatRetentionInput] = useState<string>('7')
+  const [savingRetention, setSavingRetention] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
@@ -35,10 +39,12 @@ export default function SettingsPage() {
   async function refresh() {
     try {
       const [settingsRes, driveRes] = await Promise.all([
-        apiClient.get<{ hasApiKey: boolean }>('/settings'),
+        apiClient.get<{ hasApiKey: boolean; chatRetentionDays: number }>('/settings'),
         apiClient.get<{ connected: boolean; configured: boolean }>('/drive/status'),
       ])
       setHasApiKey(settingsRes.data.hasApiKey)
+      setChatRetentionDays(settingsRes.data.chatRetentionDays)
+      setChatRetentionInput(String(settingsRes.data.chatRetentionDays))
       setDriveConnected(driveRes.data.connected)
       setDriveConfigured(driveRes.data.configured)
     } catch (e: any) {
@@ -80,6 +86,27 @@ export default function SettingsPage() {
       setError(e?.response?.data?.error ?? 'Failed to remove key')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleSaveRetention() {
+    const days = Number(chatRetentionInput)
+    if (!Number.isInteger(days) || days < 1 || days > 90) {
+      setError('Chat retention must be a whole number between 1 and 90.')
+      return
+    }
+    if (days === chatRetentionDays) return
+    setSavingRetention(true)
+    setError(null)
+    setStatus(null)
+    try {
+      await apiClient.put('/settings/chat-retention', { days })
+      setChatRetentionDays(days)
+      setStatus(`Chat retention set to ${days} day${days === 1 ? '' : 's'}.`)
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to save retention')
+    } finally {
+      setSavingRetention(false)
     }
   }
 
@@ -167,6 +194,36 @@ export default function SettingsPage() {
             </Button>
           )
         )}
+      </section>
+
+      {/* Chat retention */}
+      <section className="mb-8">
+        <h2 className="flex items-center gap-2 text-lg font-medium mb-4">
+          <MessageSquare className="w-5 h-5" />
+          Chat History
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Chat sessions are kept for this many days after the last message. Older chats are
+          automatically deleted. Minimum 1, maximum 90.
+        </p>
+        <div className="flex items-center gap-2 max-w-xs">
+          <input
+            type="number"
+            min={1}
+            max={90}
+            value={chatRetentionInput}
+            onChange={(e) => setChatRetentionInput(e.target.value)}
+            className="w-24 rounded-lg border border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+          />
+          <span className="text-sm text-muted-foreground">days</span>
+          <Button
+            onClick={handleSaveRetention}
+            disabled={savingRetention || Number(chatRetentionInput) === chatRetentionDays}
+            size="sm"
+          >
+            {savingRetention ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
       </section>
 
       {/* Claude API Key */}

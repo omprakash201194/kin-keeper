@@ -11,16 +11,12 @@ import java.time.Instant;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class UserProfile {
-    private String uid;
-    private String email;
-    private String displayName;
-    private String photoUrl;
+public class ChatSession {
+    private String id;
+    private String userId;
     private String familyId;
-    private String role;
-    private String claudeApiKeyEncrypted;
-    private String driveRefreshTokenEncrypted;
-    private Integer chatRetentionDays;
+    private String title;
     private Instant createdAt;
     private Instant updatedAt;
+    private Instant expiresAt;
 }
