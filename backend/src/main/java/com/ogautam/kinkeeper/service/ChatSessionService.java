@@ -7,6 +7,8 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.WriteBatch;
+
+import java.util.Comparator;
 import com.ogautam.kinkeeper.model.ChatMessage;
 import com.ogautam.kinkeeper.model.ChatSession;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
@@ -61,9 +63,10 @@ public class ChatSessionService {
     public List<ChatSession> listForUser(FirebaseUserPrincipal principal)
             throws ExecutionException, InterruptedException {
         Instant now = Instant.now();
+        // reason: no server-side orderBy — Firestore would require a composite
+        // index for equality+orderBy, and per-user session counts stay small.
         List<QueryDocumentSnapshot> docs = firestore.collection(SESSIONS_COLLECTION)
                 .whereEqualTo("userId", principal.uid())
-                .orderBy("updatedAt", Query.Direction.DESCENDING)
                 .get().get()
                 .getDocuments();
         List<ChatSession> active = new ArrayList<>(docs.size());
@@ -76,6 +79,8 @@ public class ChatSessionService {
             }
             active.add(s);
         }
+        active.sort(Comparator.comparing(ChatSession::getUpdatedAt,
+                Comparator.nullsLast(Comparator.reverseOrder())));
         return active;
     }
 
