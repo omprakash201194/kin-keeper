@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: kin-keeper-backend
+  namespace: homelab
+spec:
+  selector:
+    app: kin-keeper-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kin-keeper-frontend
+  namespace: homelab
+spec:
+  selector:
+    app: kin-keeper-frontend
+  ports:
+    - port: 80
+      targetPort: 80
+  type: ClusterIP

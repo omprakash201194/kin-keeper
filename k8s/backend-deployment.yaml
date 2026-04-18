@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kin-keeper-backend
+  namespace: homelab
+  labels:
+    app: kin-keeper-backend
+    env: homelab
+    managed-by: kubectl
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kin-keeper-backend
+  template:
+    metadata:
+      labels:
+        app: kin-keeper-backend
+        env: homelab
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+      containers:
+        - name: kin-keeper-backend
+          # Image is updated by CI on each push to main:
+          # localhost:30500/homelab/kin-keeper-backend:<sha>
+          image: localhost:30500/homelab/kin-keeper-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: kin-keeper-config
+          volumeMounts:
+            - name: firebase-credentials
+              mountPath: /etc/firebase
+              readOnly: true
+          readinessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: firebase-credentials
+          secret:
+            secretName: kin-keeper-firebase

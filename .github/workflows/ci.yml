@@ -1,0 +1,139 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ── Backend: compile + test ──────────────────────────────────────────────────
+  backend:
+    name: Backend (Java 21 / Maven)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Cache Maven packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-maven-${{ hashFiles('backend/pom.xml') }}
+          restore-keys: ${{ runner.os }}-maven-
+
+      - name: Run tests
+        run: mvn -f backend/pom.xml test -B
+
+      - name: Package (skip tests)
+        if: github.ref == 'refs/heads/main'
+        run: mvn -f backend/pom.xml package -DskipTests -B
+
+      - name: Upload backend jar
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/kin-keeper-*.jar
+          retention-days: 1
+
+  # ── Frontend: lint + build ───────────────────────────────────────────────────
+  frontend:
+    name: Frontend (Node 20 / Vite)
+    runs-on: ubuntu-latest
+    env:
+      # Vite inlines VITE_* variables into the bundle at build time.
+      VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+      VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+      VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix frontend
+
+      - name: Type-check + build
+        run: npm run build --prefix frontend
+
+      - name: Upload frontend dist
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+          retention-days: 1
+
+  # ── Deploy: build images + push + kubectl ────────────────────────────────────
+  # Runs on a self-hosted runner registered on the homelab server.
+  # The runner has direct access to the insecure Docker registry at
+  # 100.76.108.123:30500 and a valid kubeconfig pointing at the k3s cluster.
+  #
+  # To register a runner on the homelab server:
+  #   1. Go to https://github.com/omprakash201194/kin-keeper/settings/actions/runners
+  #   2. Click "New self-hosted runner" → Linux → follow the instructions
+  #   3. Start the runner as a systemd service so it survives reboots
+  deploy:
+    name: Deploy to Homelab
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main'
+    runs-on: self-hosted
+    env:
+      REGISTRY: localhost:30500
+      IMAGE_TAG: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download backend jar
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-jar
+          path: backend/target/
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist/
+
+      - name: Build & push backend image
+        run: |
+          docker build \
+            --build-arg JAR_FILE=target/kin-keeper-*.jar \
+            -t $REGISTRY/homelab/kin-keeper-backend:$IMAGE_TAG \
+            -t $REGISTRY/homelab/kin-keeper-backend:latest \
+            backend/
+          docker push $REGISTRY/homelab/kin-keeper-backend:$IMAGE_TAG
+          docker push $REGISTRY/homelab/kin-keeper-backend:latest
+
+      - name: Build & push frontend image
+        run: |
+          docker build \
+            -t $REGISTRY/homelab/kin-keeper-frontend:$IMAGE_TAG \
+            -t $REGISTRY/homelab/kin-keeper-frontend:latest \
+            frontend/
+          docker push $REGISTRY/homelab/kin-keeper-frontend:$IMAGE_TAG
+          docker push $REGISTRY/homelab/kin-keeper-frontend:latest
+
+      - name: Roll out new images
+        run: |
+          kubectl set image deployment/kin-keeper-backend \
+            kin-keeper-backend=$REGISTRY/homelab/kin-keeper-backend:$IMAGE_TAG \
+            -n homelab
+          kubectl set image deployment/kin-keeper-frontend \
+            kin-keeper-frontend=$REGISTRY/homelab/kin-keeper-frontend:$IMAGE_TAG \
+            -n homelab
+          kubectl rollout status deployment/kin-keeper-backend -n homelab --timeout=300s
+          kubectl rollout status deployment/kin-keeper-frontend -n homelab --timeout=90s

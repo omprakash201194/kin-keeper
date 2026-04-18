@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kin-keeper-config
+  namespace: homelab
+data:
+  FIREBASE_PROJECT_ID: "kin-keeper-7a525"
+  FIREBASE_CREDENTIALS_PATH: "/etc/firebase/firebase-service-account.json"
+  JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: kin-keeper-ingress
+  namespace: homelab
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    cert-manager.io/cluster-issuer: "homelab-ca-issuer"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts:
+        - kin-keeper.homelab.local
+      secretName: kin-keeper-tls
+  rules:
+    - host: kin-keeper.homelab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kin-keeper-frontend
+                port:
+                  number: 80
