@@ -7,6 +7,7 @@ import com.ogautam.kinkeeper.crypto.CryptoService;
 import com.ogautam.kinkeeper.model.UserProfile;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import com.google.cloud.firestore.FieldValue;
+import com.google.cloud.firestore.SetOptions;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
@@ -149,10 +150,10 @@ public class UserService {
         }
         String encrypted = cryptoService.encrypt(plaintext.trim());
         firestore.collection(USERS_COLLECTION).document(uid)
-                .update(Map.of(
+                .set(Map.of(
                         "claudeApiKeyEncrypted", encrypted,
                         "updatedAt", Instant.now()
-                )).get();
+                ), SetOptions.merge()).get();
         log.info("Saved Claude API key for user {}", uid);
     }
 
@@ -187,10 +188,10 @@ public class UserService {
         }
         String encrypted = cryptoService.encrypt(plaintext);
         firestore.collection(USERS_COLLECTION).document(uid)
-                .update(Map.of(
+                .set(Map.of(
                         "driveRefreshTokenEncrypted", encrypted,
                         "updatedAt", Instant.now()
-                )).get();
+                ), SetOptions.merge()).get();
         log.info("Saved Drive refresh token for user {}", uid);
     }
 
@@ -221,10 +222,10 @@ public class UserService {
                     + ChatSessionService.MIN_RETENTION_DAYS + " and " + ChatSessionService.MAX_RETENTION_DAYS);
         }
         firestore.collection(USERS_COLLECTION).document(uid)
-                .update(Map.of(
+                .set(Map.of(
                         "chatRetentionDays", days,
                         "updatedAt", Instant.now()
-                )).get();
+                ), SetOptions.merge()).get();
         log.info("Saved chatRetentionDays={} for user {}", days, uid);
     }
 
