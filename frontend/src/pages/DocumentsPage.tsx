@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Upload, FileText, Download, Trash2 } from 'lucide-react'
+import { Upload, FileText, Download, Trash2, Camera, FileUp } from 'lucide-react'
+import { useRef } from 'react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 import {
@@ -41,6 +42,8 @@ export default function DocumentsPage() {
   const [uploadNotes, setUploadNotes] = useState('')
   const [uploadLabels, setUploadLabels] = useState('')
   const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   const [error, setError] = useState<string | null>(null)
 
@@ -212,11 +215,32 @@ export default function DocumentsPage() {
 
       {isAdmin && showUpload && canUpload && (
         <form onSubmit={handleUpload} className="mb-6 max-w-xl space-y-3 border rounded-md p-4">
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+              <FileUp className="w-4 h-4 mr-2" />
+              Choose file
+            </Button>
+            <Button type="button" variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
+              <Camera className="w-4 h-4 mr-2" />
+              Scan document
+            </Button>
+            <span className="text-sm text-muted-foreground self-center truncate">
+              {uploadFile ? uploadFile.name : 'No file selected'}
+            </span>
+          </div>
           <input
+            ref={fileInputRef}
             type="file"
             onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-            className="w-full text-sm"
-            required
+            className="hidden"
+          />
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+            className="hidden"
           />
           <div className="grid grid-cols-2 gap-3">
             <select
