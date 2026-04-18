@@ -82,6 +82,16 @@
             <version>${google-api-services-drive.version}</version>
         </dependency>
 
+        <!-- Redis-backed cache -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-cache</artifactId>
+        </dependency>
+
         <!-- Anthropic Claude SDK -->
         <dependency>
             <groupId>com.anthropic</groupId>

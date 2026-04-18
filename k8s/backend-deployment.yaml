@@ -37,6 +37,8 @@ spec:
             - secretRef:
                 name: kin-keeper-google-oauth
                 optional: true
+            - secretRef:
+                name: redis-auth
           volumeMounts:
             - name: firebase-credentials
               mountPath: /etc/firebase

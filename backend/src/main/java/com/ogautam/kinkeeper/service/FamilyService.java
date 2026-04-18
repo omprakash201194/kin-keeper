@@ -4,10 +4,14 @@ import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
+import com.ogautam.kinkeeper.config.CacheConfig;
 import com.ogautam.kinkeeper.model.Family;
 import com.ogautam.kinkeeper.model.FamilyMember;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -32,6 +36,11 @@ public class FamilyService {
         this.categoryService = categoryService;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#principal.uid()"),
+            @CacheEvict(value = CacheConfig.CACHE_FAMILY_BY_USER, key = "#principal.uid()"),
+            @CacheEvict(value = CacheConfig.CACHE_MEMBERS, key = "#principal.uid()")
+    })
     public Family createFamily(FirebaseUserPrincipal principal, String name)
             throws ExecutionException, InterruptedException {
         String existingFamilyId = getUserFamilyId(principal.uid());
@@ -79,6 +88,7 @@ public class FamilyService {
         ref.set(self).get();
     }
 
+    @Cacheable(value = CacheConfig.CACHE_FAMILY_BY_USER, key = "#uid", unless = "#result == null")
     public Family getFamilyForUser(String uid) throws ExecutionException, InterruptedException {
         String familyId = getUserFamilyId(uid);
         if (familyId == null) {
@@ -89,6 +99,7 @@ public class FamilyService {
         return doc.exists() ? doc.toObject(Family.class) : null;
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_MEMBERS, key = "#principal.uid()")
     public FamilyMember addMember(FirebaseUserPrincipal principal, String name, String relationship)
             throws ExecutionException, InterruptedException {
         String familyId = requireFamilyId(principal);
@@ -108,6 +119,7 @@ public class FamilyService {
         return member;
     }
 
+    @Cacheable(value = CacheConfig.CACHE_MEMBERS, key = "#principal.uid()")
     public List<FamilyMember> listMembers(FirebaseUserPrincipal principal)
             throws ExecutionException, InterruptedException {
         String familyId = getUserFamilyId(principal.uid());

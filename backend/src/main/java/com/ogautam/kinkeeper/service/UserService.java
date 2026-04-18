@@ -2,11 +2,15 @@ package com.ogautam.kinkeeper.service;
 
 import com.google.cloud.firestore.DocumentSnapshot;
 import com.google.cloud.firestore.Firestore;
+import com.ogautam.kinkeeper.config.CacheConfig;
 import com.ogautam.kinkeeper.crypto.CryptoService;
 import com.ogautam.kinkeeper.model.UserProfile;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import com.google.cloud.firestore.FieldValue;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.cache.annotation.Caching;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -33,18 +37,25 @@ public class UserService {
         this.inviteService = inviteService;
     }
 
+    @Caching(evict = {
+            @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#principal.uid()"),
+            @CacheEvict(value = CacheConfig.CACHE_FAMILY_BY_USER, key = "#principal.uid()")
+    })
     public UserProfile createOrUpdateUser(FirebaseUserPrincipal principal) throws ExecutionException, InterruptedException {
+        // Single read at entry; all downstream logic uses this snapshot + an accumulated
+        // updates map, collapsing what used to be 4 reads of the same doc into 1 read + 1 write.
         DocumentSnapshot doc = firestore.collection(USERS_COLLECTION)
                 .document(principal.uid()).get().get();
 
+        Map<String, Object> updates = new HashMap<>();
+        String familyId;
+        String role;
+
         if (doc.exists()) {
-            firestore.collection(USERS_COLLECTION).document(principal.uid())
-                    .update(Map.of(
-                            "displayName", principal.name() != null ? principal.name() : "",
-                            "photoUrl", principal.picture() != null ? principal.picture() : "",
-                            "updatedAt", Instant.now()
-                    )).get();
-            log.info("Updated user profile for {}", principal.email());
+            updates.put("displayName", principal.name() != null ? principal.name() : "");
+            updates.put("photoUrl", principal.picture() != null ? principal.picture() : "");
+            familyId = stringOrNull(doc.get("familyId"));
+            role = stringOrNull(doc.get("role"));
         } else {
             UserProfile profile = UserProfile.builder()
                     .uid(principal.uid())
@@ -57,53 +68,47 @@ public class UserService {
             firestore.collection(USERS_COLLECTION).document(principal.uid())
                     .set(profile).get();
             log.info("Created new user profile for {}", principal.email());
+            familyId = null;
+            role = null;
         }
 
-        maybeAutoAcceptInvite(principal.uid(), principal.email());
-        ensureRoleConsistent(principal.uid());
+        // Auto-accept a pending invite if the user has no family yet.
+        if (familyId == null) {
+            var invite = inviteService.findPendingForEmail(principal.email());
+            if (invite != null) {
+                familyId = invite.getFamilyId();
+                role = invite.getRole() != null ? invite.getRole() : ROLE_VIEWER;
+                updates.put("familyId", familyId);
+                updates.put("role", role);
+                inviteService.markAccepted(invite.getId());
+                log.info("Auto-accepted invite {} for {} into family {}", invite.getId(), principal.email(), familyId);
+            }
+        }
+
+        // Role backfill for users who created families before role was persisted.
+        if (familyId != null && role == null) {
+            DocumentSnapshot family = firestore.collection("families").document(familyId).get().get();
+            if (family.exists()) {
+                Object adminUid = family.get("adminUid");
+                role = principal.uid().equals(adminUid) ? ROLE_ADMIN : ROLE_VIEWER;
+                updates.put("role", role);
+                log.info("Backfilled role={} for user {}", role, principal.uid());
+            }
+        }
+
+        if (doc.exists() && !updates.isEmpty()) {
+            updates.put("updatedAt", Instant.now());
+            firestore.collection(USERS_COLLECTION).document(principal.uid()).update(updates).get();
+            log.info("Updated user profile for {}", principal.email());
+        }
+
         return getUserByUid(principal.uid());
     }
 
-    private void ensureRoleConsistent(String uid) throws ExecutionException, InterruptedException {
-        DocumentSnapshot user = firestore.collection(USERS_COLLECTION).document(uid).get().get();
-        if (!user.exists()) return;
-        Object familyId = user.get("familyId");
-        Object role = user.get("role");
-        if (familyId == null || familyId.toString().isBlank()) return;
-        if (role != null && !role.toString().isBlank()) return;
-
-        // reason: slice-4 shipped after some users had already created families; their user
-        // doc has familyId but no role. Derive from family.adminUid so the admin UI renders.
-        DocumentSnapshot family = firestore.collection("families")
-                .document(familyId.toString()).get().get();
-        if (!family.exists()) return;
-        Object adminUid = family.get("adminUid");
-        String derivedRole = uid.equals(adminUid) ? ROLE_ADMIN : ROLE_VIEWER;
-        firestore.collection(USERS_COLLECTION).document(uid).update(Map.of(
-                "role", derivedRole,
-                "updatedAt", Instant.now()
-        )).get();
-        log.info("Backfilled role={} for user {}", derivedRole, uid);
-    }
-
-    private void maybeAutoAcceptInvite(String uid, String email)
-            throws ExecutionException, InterruptedException {
-        DocumentSnapshot user = firestore.collection(USERS_COLLECTION).document(uid).get().get();
-        if (!user.exists()) return;
-        Object existingFamilyId = user.get("familyId");
-        if (existingFamilyId != null && !existingFamilyId.toString().isBlank()) return;
-
-        var invite = inviteService.findPendingForEmail(email);
-        if (invite == null) return;
-
-        firestore.collection(USERS_COLLECTION).document(uid)
-                .update(Map.of(
-                        "familyId", invite.getFamilyId(),
-                        "role", invite.getRole() != null ? invite.getRole() : ROLE_VIEWER,
-                        "updatedAt", Instant.now()
-                )).get();
-        inviteService.markAccepted(invite.getId());
-        log.info("Auto-accepted invite {} for {} into family {}", invite.getId(), email, invite.getFamilyId());
+    private static String stringOrNull(Object o) {
+        if (o == null) return null;
+        String s = o.toString();
+        return s.isBlank() ? null : s;
     }
 
     public String getRole(String uid) throws ExecutionException, InterruptedException {
@@ -120,6 +125,7 @@ public class UserService {
         }
     }
 
+    @Cacheable(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid", unless = "#result == null")
     public UserProfile getUserByUid(String uid) throws ExecutionException, InterruptedException {
         DocumentSnapshot doc = firestore.collection(USERS_COLLECTION)
                 .document(uid).get().get();
@@ -136,6 +142,7 @@ public class UserService {
         return val != null && !val.toString().isBlank();
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid")
     public void saveApiKey(String uid, String plaintext) throws ExecutionException, InterruptedException {
         if (plaintext == null || plaintext.isBlank()) {
             throw new IllegalArgumentException("API key is required");
@@ -157,6 +164,7 @@ public class UserService {
         return cryptoService.decrypt(encrypted.toString());
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid")
     public void deleteApiKey(String uid) throws ExecutionException, InterruptedException {
         Map<String, Object> updates = new HashMap<>();
         updates.put("claudeApiKeyEncrypted", FieldValue.delete());
@@ -172,6 +180,7 @@ public class UserService {
         return val != null && !val.toString().isBlank();
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid")
     public void saveDriveRefreshToken(String uid, String plaintext) throws ExecutionException, InterruptedException {
         if (plaintext == null || plaintext.isBlank()) {
             throw new IllegalArgumentException("Refresh token is required");
@@ -205,6 +214,7 @@ public class UserService {
         }
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid")
     public void saveChatRetentionDays(String uid, int days) throws ExecutionException, InterruptedException {
         if (days < ChatSessionService.MIN_RETENTION_DAYS || days > ChatSessionService.MAX_RETENTION_DAYS) {
             throw new IllegalArgumentException("chatRetentionDays must be between "
@@ -218,6 +228,7 @@ public class UserService {
         log.info("Saved chatRetentionDays={} for user {}", days, uid);
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_USER_PROFILE, key = "#uid")
     public void deleteDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
         Map<String, Object> updates = new HashMap<>();
         updates.put("driveRefreshTokenEncrypted", FieldValue.delete());

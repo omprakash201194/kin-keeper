@@ -4,8 +4,11 @@ import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.google.cloud.firestore.WriteBatch;
+import com.ogautam.kinkeeper.config.CacheConfig;
 import com.ogautam.kinkeeper.model.Category;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -26,6 +29,7 @@ public class CategoryService {
         this.firestore = firestore;
     }
 
+    @CacheEvict(value = CacheConfig.CACHE_CATEGORIES, key = "#familyId")
     public void seedDefaults(String familyId) throws ExecutionException, InterruptedException {
         WriteBatch batch = firestore.batch();
         for (String name : DEFAULT_CATEGORIES) {
@@ -42,6 +46,7 @@ public class CategoryService {
         log.info("Seeded {} default categories for family {}", DEFAULT_CATEGORIES.size(), familyId);
     }
 
+    @Cacheable(value = CacheConfig.CACHE_CATEGORIES, key = "#familyId")
     public List<Category> listByFamily(String familyId) throws ExecutionException, InterruptedException {
         List<QueryDocumentSnapshot> docs = firestore.collection(CATEGORIES_COLLECTION)
                 .whereEqualTo("familyId", familyId)
