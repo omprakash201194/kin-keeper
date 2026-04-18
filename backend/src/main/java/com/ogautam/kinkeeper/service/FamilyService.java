@@ -49,7 +49,11 @@ public class FamilyService {
         ref.set(family).get();
 
         firestore.collection(USERS_COLLECTION).document(principal.uid())
-                .update("familyId", ref.getId()).get();
+                .update(Map.of(
+                        "familyId", ref.getId(),
+                        "role", UserService.ROLE_ADMIN,
+                        "updatedAt", Instant.now().toString()
+                )).get();
 
         categoryService.seedDefaults(ref.getId());
 

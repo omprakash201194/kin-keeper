@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Upload, FileText, Download, Trash2 } from 'lucide-react'
 import apiClient from '@/services/api'
+import { useProfile } from '@/hooks/useProfile'
 
 type Member = { id: string; name: string; relationship?: string }
 type Category = { id: string; name: string }
@@ -16,6 +17,7 @@ type DocumentRow = {
 }
 
 export default function DocumentsPage() {
+  const { isAdmin } = useProfile()
   const [loading, setLoading] = useState(true)
   const [members, setMembers] = useState<Member[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -151,19 +153,21 @@ export default function DocumentsPage() {
           <h1 className="text-xl font-semibold">Documents</h1>
           <p className="text-sm text-muted-foreground">Browse and manage family documents.</p>
         </div>
-        <Button onClick={() => setShowUpload((v) => !v)} disabled={!canUpload}>
-          <Upload className="w-4 h-4 mr-2" />
-          {showUpload ? 'Cancel' : 'Upload'}
-        </Button>
+        {isAdmin && (
+          <Button onClick={() => setShowUpload((v) => !v)} disabled={!canUpload}>
+            <Upload className="w-4 h-4 mr-2" />
+            {showUpload ? 'Cancel' : 'Upload'}
+          </Button>
+        )}
       </div>
 
-      {!canUpload && (
+      {isAdmin && !canUpload && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
           Add at least one family member before uploading documents.
         </div>
       )}
 
-      {showUpload && canUpload && (
+      {isAdmin && showUpload && canUpload && (
         <form onSubmit={handleUpload} className="mb-6 max-w-xl space-y-3 border rounded-md p-4">
           <input
             type="file"
@@ -256,9 +260,11 @@ export default function DocumentsPage() {
                 <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Download">
                   <Download className="w-4 h-4" />
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(doc)} title="Delete">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
+                {isAdmin && (
+                  <Button variant="ghost" size="icon" onClick={() => handleDelete(doc)} title="Delete">
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
               </div>
             </li>
           ))}

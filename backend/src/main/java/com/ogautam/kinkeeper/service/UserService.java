@@ -20,12 +20,17 @@ public class UserService {
 
     private static final String USERS_COLLECTION = "users";
 
+    public static final String ROLE_ADMIN = "admin";
+    public static final String ROLE_VIEWER = "viewer";
+
     private final Firestore firestore;
     private final CryptoService cryptoService;
+    private final InviteService inviteService;
 
-    public UserService(Firestore firestore, CryptoService cryptoService) {
+    public UserService(Firestore firestore, CryptoService cryptoService, InviteService inviteService) {
         this.firestore = firestore;
         this.cryptoService = cryptoService;
+        this.inviteService = inviteService;
     }
 
     public UserProfile createOrUpdateUser(FirebaseUserPrincipal principal) throws ExecutionException, InterruptedException {
@@ -54,7 +59,42 @@ public class UserService {
             log.info("Created new user profile for {}", principal.email());
         }
 
+        maybeAutoAcceptInvite(principal.uid(), principal.email());
         return getUserByUid(principal.uid());
+    }
+
+    private void maybeAutoAcceptInvite(String uid, String email)
+            throws ExecutionException, InterruptedException {
+        DocumentSnapshot user = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!user.exists()) return;
+        Object existingFamilyId = user.get("familyId");
+        if (existingFamilyId != null && !existingFamilyId.toString().isBlank()) return;
+
+        var invite = inviteService.findPendingForEmail(email);
+        if (invite == null) return;
+
+        firestore.collection(USERS_COLLECTION).document(uid)
+                .update(Map.of(
+                        "familyId", invite.getFamilyId(),
+                        "role", invite.getRole() != null ? invite.getRole() : ROLE_VIEWER,
+                        "updatedAt", Instant.now().toString()
+                )).get();
+        inviteService.markAccepted(invite.getId());
+        log.info("Auto-accepted invite {} for {} into family {}", invite.getId(), email, invite.getFamilyId());
+    }
+
+    public String getRole(String uid) throws ExecutionException, InterruptedException {
+        DocumentSnapshot doc = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!doc.exists()) return null;
+        Object role = doc.get("role");
+        return role != null ? role.toString() : null;
+    }
+
+    public void requireAdmin(String uid) throws ExecutionException, InterruptedException {
+        String role = getRole(uid);
+        if (!ROLE_ADMIN.equals(role)) {
+            throw new IllegalArgumentException("Admin role required");
+        }
     }
 
     public UserProfile getUserByUid(String uid) throws ExecutionException, InterruptedException {

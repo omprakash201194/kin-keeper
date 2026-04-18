@@ -3,6 +3,7 @@ package com.ogautam.kinkeeper.controller;
 import com.ogautam.kinkeeper.model.Document;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import com.ogautam.kinkeeper.service.DocumentService;
+import com.ogautam.kinkeeper.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpHeaders;
@@ -21,9 +22,11 @@ import java.util.Map;
 public class DocumentController {
 
     private final DocumentService documentService;
+    private final UserService userService;
 
-    public DocumentController(DocumentService documentService) {
+    public DocumentController(DocumentService documentService, UserService userService) {
         this.documentService = documentService;
+        this.userService = userService;
     }
 
     @GetMapping
@@ -40,6 +43,7 @@ public class DocumentController {
                                     @RequestParam String memberId,
                                     @RequestParam String categoryId,
                                     @RequestParam(required = false) String notes) throws Exception {
+        userService.requireAdmin(principal.uid());
         if (file.isEmpty()) {
             throw new IllegalArgumentException("file is empty");
         }
@@ -81,6 +85,7 @@ public class DocumentController {
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                     @PathVariable String id) throws Exception {
+        userService.requireAdmin(principal.uid());
         documentService.deleteDocument(principal, id);
         return ResponseEntity.ok(Map.of("status", "deleted"));
     }
