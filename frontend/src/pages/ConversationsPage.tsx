@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import {
   MessageCircle, Plus, Trash2, X, Phone, Users, Home, Car, Cpu, Shield, FileText, Bell,
+  Upload, Camera, FileUp,
 } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
+import { flattenCategoryTree, Category as TreeCategory } from '@/lib/categoryTree'
 
 type LinkType = 'MEMBER' | 'CONTACT' | 'HOME' | 'VEHICLE' | 'APPLIANCE' | 'POLICY' | 'DOCUMENT' | 'CONVERSATION'
 type LinkRef = { type: LinkType; id: string }
@@ -31,6 +33,7 @@ type Member = { id: string; name: string }
 type Contact = { id: string; name: string; relationship?: string }
 type AssetRow = { id: string; type: Exclude<LinkType, 'MEMBER' | 'CONTACT' | 'DOCUMENT' | 'CONVERSATION'>; name: string }
 type DocumentRow = { id: string; fileName: string }
+type Category = TreeCategory
 
 const ASSET_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   HOME: Home, VEHICLE: Car, APPLIANCE: Cpu, POLICY: Shield,
@@ -64,6 +67,15 @@ export default function ConversationsPage() {
   const [contacts, setContacts] = useState<Contact[]>([])
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [documents, setDocuments] = useState<DocumentRow[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+
+  const [showUpload, setShowUpload] = useState(false)
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadCategoryId, setUploadCategoryId] = useState('')
+  const [uploadLabels, setUploadLabels] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const uploadFileRef = useRef<HTMLInputElement>(null)
+  const uploadCameraRef = useRef<HTMLInputElement>(null)
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -92,16 +104,18 @@ export default function ConversationsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [m, c, a, d] = await Promise.all([
+      const [m, c, a, d, cat] = await Promise.all([
         apiClient.get<Member[]>('/family/members'),
         apiClient.get<Contact[]>('/contacts'),
         apiClient.get<AssetRow[]>('/assets'),
         apiClient.get<DocumentRow[]>('/documents'),
+        apiClient.get<Category[]>('/categories'),
       ])
       setMembers(m.data)
       setContacts(c.data)
       setAssets(a.data)
       setDocuments(d.data)
+      setCategories(cat.data)
       await reload()
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load')
@@ -154,6 +168,48 @@ export default function ConversationsPage() {
   function removeMessage(i: number) {
     setForm({ ...form, messages: form.messages.filter((_, idx) => idx !== i) })
   }
+
+  async function handleUploadAndAttach() {
+    if (!uploadFile || !uploadCategoryId) {
+      setError('Pick a file and a category before uploading.')
+      return
+    }
+    setUploading(true)
+    setError(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', uploadFile)
+      fd.append('categoryId', uploadCategoryId)
+      // reason: backfill the conversation's member link (if any) onto the new doc so
+      // it still shows up under that member's view on the Documents page.
+      const memberLink = form.links.find((l) => l.type === 'MEMBER')
+      if (memberLink) fd.append('memberId', memberLink.id)
+      if (uploadLabels.trim()) fd.append('labels', uploadLabels.trim())
+      // Link the new document to all the conversation's other subjects so filtering
+      // by a contact/asset later also surfaces the document.
+      const preLinks = form.links.filter((l) => l.type !== 'DOCUMENT')
+      if (preLinks.length > 0) fd.append('links', JSON.stringify(preLinks))
+
+      const res = await apiClient.post<{ id: string; fileName: string }>('/documents/upload', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+      // Add to local documents list so the chip renders with a filename
+      setDocuments((prev) => [{ id: res.data.id, fileName: res.data.fileName }, ...prev])
+      // Attach to the conversation's links
+      setForm({ ...form, links: [...form.links, { type: 'DOCUMENT', id: res.data.id }] })
+      setUploadFile(null)
+      setUploadCategoryId('')
+      setUploadLabels('')
+      setShowUpload(false)
+      setStatus(`Uploaded "${res.data.fileName}" and attached.`)
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  const categoryTree = useMemo(() => flattenCategoryTree(categories), [categories])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -363,8 +419,63 @@ export default function ConversationsPage() {
                 if (type && id) addLink(type as LinkType, id)
               }}
                             options={assets.map((a) => ({ id: `${a.type}:${a.id}`, label: `${a.type.toLowerCase()}: ${a.name}` }))} />
-              <SubjectAdder label="+ Document" onPick={(id) => addLink('DOCUMENT', id)}
+              <SubjectAdder label="+ Link existing document" onPick={(id) => addLink('DOCUMENT', id)}
                             options={documents.map((d) => ({ id: d.id, label: d.fileName }))} />
+            </div>
+
+            <div className="pt-2 border-t">
+              <Button type="button" variant="outline" size="sm"
+                      onClick={() => setShowUpload((v) => !v)}>
+                <Upload className="w-3 h-3 mr-1" />
+                {showUpload ? 'Cancel upload' : 'Upload new document'}
+              </Button>
+
+              {showUpload && (
+                <div className="mt-2 space-y-2 border rounded-md p-3 bg-muted/30">
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <Button type="button" variant="outline" size="sm"
+                            onClick={() => uploadFileRef.current?.click()}>
+                      <FileUp className="w-3.5 h-3.5 mr-1" />
+                      Choose file
+                    </Button>
+                    <Button type="button" variant="outline" size="sm"
+                            onClick={() => uploadCameraRef.current?.click()}>
+                      <Camera className="w-3.5 h-3.5 mr-1" />
+                      Scan
+                    </Button>
+                    <span className="text-xs text-muted-foreground truncate">
+                      {uploadFile ? uploadFile.name : 'No file selected'}
+                    </span>
+                  </div>
+                  <input ref={uploadFileRef} type="file" className="hidden"
+                         onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
+                  <input ref={uploadCameraRef} type="file" accept="image/*" capture="environment"
+                         className="hidden"
+                         onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
+                  <select className="w-full rounded-md border px-3 py-2 text-sm"
+                          value={uploadCategoryId}
+                          onChange={(e) => setUploadCategoryId(e.target.value)}>
+                    <option value="">Pick a category…</option>
+                    {categoryTree.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {'\u00A0\u00A0'.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <input className="w-full rounded-md border px-3 py-2 text-sm"
+                         placeholder="Labels (comma-separated, optional)"
+                         value={uploadLabels}
+                         onChange={(e) => setUploadLabels(e.target.value)} />
+                  <Button type="button" size="sm" onClick={handleUploadAndAttach}
+                          disabled={uploading || !uploadFile || !uploadCategoryId}>
+                    {uploading ? 'Uploading…' : 'Upload & attach'}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">
+                    The uploaded document inherits the conversation's member/contact/asset links
+                    so it shows up on the Documents page under those subjects too.
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
