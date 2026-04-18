@@ -1,14 +1,67 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
 import { Key, User } from 'lucide-react'
+import apiClient from '@/services/api'
 
 export default function SettingsPage() {
   const { user } = useAuth()
   const [apiKey, setApiKey] = useState('')
+  const [hasApiKey, setHasApiKey] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [status, setStatus] = useState<string | null>(null)
 
-  const handleSaveApiKey = () => {
-    // TODO: call PUT /api/settings/api-key
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  async function refresh() {
+    try {
+      const res = await apiClient.get<{ hasApiKey: boolean }>('/settings')
+      setHasApiKey(res.data.hasApiKey)
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to load settings')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!apiKey.trim()) return
+    setSaving(true)
+    setError(null)
+    setStatus(null)
+    try {
+      await apiClient.put('/settings/api-key', { apiKey: apiKey.trim() })
+      setApiKey('')
+      setHasApiKey(true)
+      setStatus('API key saved.')
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to save key')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm('Remove your Claude API key? The AI chat assistant will stop working until you add one again.')) {
+      return
+    }
+    setDeleting(true)
+    setError(null)
+    setStatus(null)
+    try {
+      await apiClient.delete('/settings/api-key')
+      setHasApiKey(false)
+      setStatus('API key removed.')
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to remove key')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -43,6 +96,16 @@ export default function SettingsPage() {
           Provide your own Claude API key to enable the AI chat assistant.
           Your key is encrypted and stored securely. Get one at console.anthropic.com.
         </p>
+
+        {!loading && hasApiKey && (
+          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm flex items-center justify-between">
+            <span className="text-emerald-900">A key is saved. Enter a new one below to replace it.</span>
+            <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting}>
+              {deleting ? 'Removing…' : 'Remove'}
+            </Button>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <input
             type="password"
@@ -51,8 +114,13 @@ export default function SettingsPage() {
             placeholder="sk-ant-..."
             className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <Button onClick={handleSaveApiKey}>Save</Button>
+          <Button onClick={handleSave} disabled={saving || !apiKey.trim()}>
+            {saving ? 'Saving…' : 'Save'}
+          </Button>
         </div>
+
+        {status && <p className="mt-3 text-sm text-emerald-700">{status}</p>}
+        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </section>
     </div>
   )

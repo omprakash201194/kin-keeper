@@ -32,6 +32,8 @@ spec:
           envFrom:
             - configMapRef:
                 name: kin-keeper-config
+            - secretRef:
+                name: kin-keeper-encryption-key
           volumeMounts:
             - name: firebase-credentials
               mountPath: /etc/firebase
