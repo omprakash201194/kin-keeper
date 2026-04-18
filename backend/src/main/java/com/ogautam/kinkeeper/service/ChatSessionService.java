@@ -148,6 +148,20 @@ public class ChatSessionService {
         deleteCascade(sessionId);
     }
 
+    public void setPendingAttachment(FirebaseUserPrincipal principal, String sessionId, String attachmentId)
+            throws ExecutionException, InterruptedException {
+        get(principal, sessionId);
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
+                .update("pendingAttachmentId", attachmentId).get();
+    }
+
+    public void clearPendingAttachment(String sessionId) throws ExecutionException, InterruptedException {
+        // reason: used by the agent after save_attachment consumes the staged file.
+        // Skips the ownership check because the agent has already authorized via principal.
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
+                .update("pendingAttachmentId", null).get();
+    }
+
     private void deleteCascade(String sessionId) throws ExecutionException, InterruptedException {
         List<QueryDocumentSnapshot> msgDocs = messages(sessionId).get().get().getDocuments();
         if (!msgDocs.isEmpty()) {

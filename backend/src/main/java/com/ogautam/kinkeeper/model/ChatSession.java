@@ -19,4 +19,5 @@ public class ChatSession {
     private Instant createdAt;
     private Instant updatedAt;
     private Instant expiresAt;
+    private String pendingAttachmentId;
 }

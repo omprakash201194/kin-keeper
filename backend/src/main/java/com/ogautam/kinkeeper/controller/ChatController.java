@@ -62,9 +62,21 @@ public class ChatController {
     public ResponseEntity<?> message(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                      @PathVariable String id,
                                      @RequestBody SendRequest body) throws Exception {
+        ChatSession session = sessions.get(principal, id);
+
+        // Resolve effective attachment: new upload this turn, or the session's pending one.
+        String effectiveAttachmentId = body.attachmentId() != null && !body.attachmentId().isBlank()
+                ? body.attachmentId()
+                : session.getPendingAttachmentId();
+
         if ((body.message() == null || body.message().isBlank())
-                && (body.attachmentId() == null || body.attachmentId().isBlank())) {
+                && (effectiveAttachmentId == null || effectiveAttachmentId.isBlank())) {
             throw new IllegalArgumentException("message or attachmentId is required");
+        }
+
+        // Persist a new attachment on the session so follow-up turns stay contextual.
+        if (body.attachmentId() != null && !body.attachmentId().isBlank()) {
+            sessions.setPendingAttachment(principal, id, body.attachmentId());
         }
 
         List<ChatMessage> existing = sessions.listMessages(principal, id);
@@ -79,7 +91,7 @@ public class ChatController {
                 : userContent;
         sessions.appendMessage(principal, id, "user", renderedUser);
 
-        ChatReply reply = agent.chat(principal, turns, userContent, body.attachmentId());
+        ChatReply reply = agent.chat(principal, turns, userContent, effectiveAttachmentId, id);
         ChatMessage assistant = sessions.appendMessage(principal, id, "assistant", reply.text());
         return ResponseEntity.ok(Map.of("reply", reply.text(), "messageId", assistant.getId()));
     }

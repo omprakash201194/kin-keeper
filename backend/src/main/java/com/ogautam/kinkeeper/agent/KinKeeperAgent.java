@@ -20,8 +20,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ogautam.kinkeeper.model.Document;
+import com.ogautam.kinkeeper.model.Family;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import com.ogautam.kinkeeper.service.CategoryService;
+import com.ogautam.kinkeeper.service.ChatSessionService;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.FamilyService;
 import com.ogautam.kinkeeper.service.UserService;
@@ -43,22 +45,30 @@ public class KinKeeperAgent {
     private static final int MAX_ITERATIONS = 8;
     private static final String SYSTEM_PROMPT = """
             You are Kin-Keeper, the assistant for a family document vault. You help users
-            find, review, and organize documents stored in their family vault. You can
-            search documents, list family members and categories, fetch document details,
-            change a document's category, and save an attached file to the vault.
+            find, review, and organize documents stored in their family vault.
 
-            Keep answers brief. When reporting search results, list filename and category.
-            Never fabricate document IDs or filenames — if a tool returns nothing, say so.
+            Available tools:
+              - search_documents, get_document, list_members, list_categories
+              - recategorize_document
+              - create_category (when the user wants a category that doesn't exist yet;
+                optional parentId for nesting — e.g. "Books" under "Education")
+              - add_member (add a new person to the family)
+              - save_attachment (save the currently-attached file to the vault)
 
-            When the user attaches an image, inspect it to figure out what kind of document
-            it is (ID card, bill, prescription, certificate…) and extract anything that
-            looks like a useful label — for example a city name from an address, an
-            issuer, or an account holder. Then:
-              1. call list_members and list_categories to see the current options,
-              2. pick the most appropriate memberId and categoryId,
-              3. call save_attachment with sensible labels (max 3, short — city names,
-                 issuers, or types are ideal).
-            If you are uncertain about the member or category, ask the user before saving.
+            Keep answers brief. Never fabricate document IDs, filenames, member or
+            category IDs — always fetch them with the appropriate list_ tool first.
+
+            When the user attaches an image, inspect it to figure out what kind of
+            document it is and extract anything useful for labels (city, issuer,
+            account holder). Then list members and categories, pick the best fit, and
+            call save_attachment. If no category fits well, it is fine to call
+            create_category first and then save_attachment with the new categoryId.
+            Keep labels short and ≤3.
+
+            The attachmentId for the currently-attached file appears in the
+            [Attachment: ... attachmentId=...] tag on the user's message. When the user
+            continues the conversation about the same attachment without re-attaching,
+            the same attachmentId is still valid — reuse it.
             """;
 
     private final DocumentService documentService;
@@ -66,6 +76,7 @@ public class KinKeeperAgent {
     private final CategoryService categoryService;
     private final UserService userService;
     private final AttachmentService attachmentService;
+    private final ChatSessionService chatSessionService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -78,19 +89,22 @@ public class KinKeeperAgent {
                           CategoryService categoryService,
                           UserService userService,
                           AttachmentService attachmentService,
+                          ChatSessionService chatSessionService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
         this.categoryService = categoryService;
         this.userService = userService;
         this.attachmentService = attachmentService;
+        this.chatSessionService = chatSessionService;
         this.defaultModel = defaultModel;
     }
 
     public ChatReply chat(FirebaseUserPrincipal principal,
                           List<ChatTurn> history,
                           String userMessage,
-                          String attachmentId) throws Exception {
+                          String attachmentId,
+                          String sessionId) throws Exception {
         String apiKey = userService.getApiKey(principal.uid());
         if (apiKey == null) {
             throw new IllegalArgumentException("No Claude API key saved. Add one in Settings.");
@@ -185,7 +199,7 @@ public class KinKeeperAgent {
                                     .name(tu.name())
                                     .input(tu._input())
                                     .build()));
-                    String result = runTool(principal, tu);
+                    String result = runTool(principal, tu, sessionId);
                     toolResults.add(ContentBlockParam.ofToolResult(
                             ToolResultBlockParam.builder()
                                     .toolUseId(tu.id())
@@ -224,7 +238,7 @@ public class KinKeeperAgent {
         return sb.toString();
     }
 
-    private String runTool(FirebaseUserPrincipal principal, ToolUseBlock tu) {
+    private String runTool(FirebaseUserPrincipal principal, ToolUseBlock tu, String sessionId) {
         try {
             Map<String, Object> input = parseInput(tu._input());
             log.info("Tool call: {} input={}", tu.name(), input);
@@ -244,11 +258,39 @@ public class KinKeeperAgent {
                     yield toJson(categoryService.listByFamily(family.getId()));
                 }
                 case "get_document" -> toJson(documentService.getDocument(principal, (String) input.get("id")));
-                case "recategorize_document" -> toJson(documentService.recategorizeDocument(
-                        principal,
-                        (String) input.get("id"),
-                        (String) input.get("categoryId")));
-                case "save_attachment" -> toJson(saveAttachment(principal, input));
+                case "recategorize_document" -> {
+                    userService.requireAdmin(principal.uid());
+                    yield toJson(documentService.recategorizeDocument(
+                            principal,
+                            (String) input.get("id"),
+                            (String) input.get("categoryId")));
+                }
+                case "create_category" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) {
+                        throw new IllegalArgumentException("User has no family");
+                    }
+                    yield toJson(categoryService.create(
+                            family.getId(),
+                            (String) input.get("name"),
+                            (String) input.get("parentId")));
+                }
+                case "add_member" -> {
+                    userService.requireAdmin(principal.uid());
+                    yield toJson(familyService.addMember(
+                            principal,
+                            (String) input.get("name"),
+                            (String) input.get("relationship")));
+                }
+                case "save_attachment" -> {
+                    userService.requireAdmin(principal.uid());
+                    var saved = saveAttachment(principal, input);
+                    if (sessionId != null) {
+                        chatSessionService.clearPendingAttachment(sessionId);
+                    }
+                    yield toJson(saved);
+                }
                 default -> "{\"error\":\"unknown tool\"}";
             };
             String preview = result.length() > 400 ? result.substring(0, 400) + "…(truncated)" : result;
@@ -357,6 +399,18 @@ public class KinKeeperAgent {
                                 "id", Map.of("type", "string", "description", "the document id"),
                                 "categoryId", Map.of("type", "string", "description", "the new category id")
                         ), List.of("id", "categoryId"))),
+                tool("create_category",
+                        "Create a new category. Use when the user asks for a category that isn't in list_categories. Supply parentId to nest (e.g. 'Books' under 'Education'). Returns the new category with its id; immediately usable in save_attachment.",
+                        schema(Map.of(
+                                "name", Map.of("type", "string", "description", "category name, e.g. 'Books'"),
+                                "parentId", Map.of("type", "string", "description", "optional parent category id")
+                        ), List.of("name"))),
+                tool("add_member",
+                        "Add a new family member.",
+                        schema(Map.of(
+                                "name", Map.of("type", "string", "description", "the member's name"),
+                                "relationship", Map.of("type", "string", "description", "e.g. Wife, Son, Self")
+                        ), List.of("name"))),
                 tool("save_attachment",
                         "Save a staged file attachment to the family vault. Only usable when the user has attached a file to the current message; the attachmentId is shown in the attachment tag of the user's message. Uploads the file to Drive and indexes it in Firestore with the provided member, category, and labels.",
                         schema(Map.of(
