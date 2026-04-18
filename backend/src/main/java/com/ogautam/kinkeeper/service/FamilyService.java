@@ -56,9 +56,27 @@ public class FamilyService {
                 )).get();
 
         categoryService.seedDefaults(ref.getId());
+        seedAdminAsMember(ref.getId(), principal);
 
         log.info("Created family {} for admin {}", ref.getId(), principal.email());
         return family;
+    }
+
+    private void seedAdminAsMember(String familyId, FirebaseUserPrincipal principal)
+            throws ExecutionException, InterruptedException {
+        DocumentReference ref = firestore.collection(MEMBERS_COLLECTION).document();
+        String displayName = principal.name() != null && !principal.name().isBlank()
+                ? principal.name()
+                : principal.email();
+        FamilyMember self = FamilyMember.builder()
+                .id(ref.getId())
+                .familyId(familyId)
+                .name(displayName)
+                .relationship("Self")
+                .addedBy(principal.uid())
+                .createdAt(Instant.now())
+                .build();
+        ref.set(self).get();
     }
 
     public Family getFamilyForUser(String uid) throws ExecutionException, InterruptedException {
