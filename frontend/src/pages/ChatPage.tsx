@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Button } from '@/components/ui/button'
-import { Send, Plus, MessageSquare, Trash2, Paperclip, Camera, X } from 'lucide-react'
+import { Send, Plus, MessageSquare, Trash2, Paperclip, Camera, X, Menu } from 'lucide-react'
 import apiClient from '@/services/api'
 
 type ChatSession = {
@@ -32,6 +32,7 @@ export default function ChatPage() {
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
@@ -173,15 +174,43 @@ export default function ChatPage() {
     return d.toLocaleDateString([], { month: 'short', day: 'numeric' })
   }
 
+  function selectAndCloseSidebar(id: string) {
+    setActiveId(id)
+    setSidebarOpen(false)
+  }
+
+  async function handleNewChatAndClose() {
+    await handleNewChat()
+    setSidebarOpen(false)
+  }
+
   return (
-    <div className="flex h-full">
-      {/* Sidebar */}
-      <aside className="w-64 border-r flex flex-col bg-muted/30">
-        <div className="p-3 border-b">
-          <Button onClick={handleNewChat} className="w-full" size="sm">
+    <div className="flex h-full relative">
+      {/* Sidebar: inline on md+, slide-over drawer on mobile */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/40 z-20"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+      <aside className={`
+        w-64 border-r flex flex-col bg-muted/30 z-30
+        md:static md:translate-x-0
+        fixed inset-y-0 left-0 transition-transform
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-3 border-b flex items-center gap-2">
+          <Button onClick={handleNewChatAndClose} className="flex-1" size="sm">
             <Plus className="w-4 h-4 mr-2" />
             New chat
           </Button>
+          <button
+            onClick={() => setSidebarOpen(false)}
+            className="md:hidden p-2 text-muted-foreground"
+            title="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto">
           {loadingSessions ? (
@@ -193,7 +222,7 @@ export default function ChatPage() {
               {sessions.map((s) => (
                 <li
                   key={s.id}
-                  onClick={() => setActiveId(s.id)}
+                  onClick={() => selectAndCloseSidebar(s.id)}
                   className={`group px-3 py-2 cursor-pointer text-sm flex items-start gap-2 border-l-2 ${
                     activeId === s.id
                       ? 'bg-background border-primary'
@@ -207,7 +236,7 @@ export default function ChatPage() {
                   </div>
                   <button
                     onClick={(e) => handleDeleteSession(s.id, e)}
-                    className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-red-600 transition"
+                    className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-600 transition"
                     title="Delete chat"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -220,14 +249,23 @@ export default function ChatPage() {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col">
-        <div className="border-b px-6 py-4">
-          <h1 className="text-xl font-semibold">
-            {sessions.find((s) => s.id === activeId)?.title || 'Chat'}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            Ask me to find, summarize, or organize your documents.
-          </p>
+      <div className="flex-1 flex flex-col min-w-0">
+        <div className="border-b px-4 md:px-6 py-4 flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="md:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground"
+            title="Chats"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold truncate">
+              {sessions.find((s) => s.id === activeId)?.title || 'Chat'}
+            </h1>
+            <p className="text-sm text-muted-foreground hidden sm:block">
+              Ask me to find, summarize, or organize your documents.
+            </p>
+          </div>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4">

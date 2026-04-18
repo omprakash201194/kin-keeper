@@ -23,6 +23,8 @@ type Member = { id: string; name: string }
 type Contact = { id: string; name: string }
 type Asset = { id: string; type: LinkType; name: string; odometerKm?: number }
 
+type AssetLinkType = 'HOME' | 'VEHICLE' | 'APPLIANCE' | 'POLICY'
+
 const EMPTY_FORM = {
   title: '',
   notes: '',
@@ -30,7 +32,7 @@ const EMPTY_FORM = {
   recurrence: 'NONE' as Reminder['recurrence'],
   recurrenceIntervalKm: '',
   dueOdometerKm: '',
-  linkType: '' as '' | LinkType,
+  linkType: '' as '' | AssetLinkType,
   linkId: '',
 }
 
@@ -71,12 +73,17 @@ export default function RemindersPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.title.trim()) return
+    if (!form.linkType || !form.linkId) {
+      setError('Reminders must be linked to an asset. Pick a home, vehicle, appliance, or policy.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
       const body: Record<string, unknown> = {
         title: form.title.trim(),
         recurrence: form.recurrence,
+        linkedRefs: [{ type: form.linkType, id: form.linkId }],
       }
       if (form.notes.trim()) body.notes = form.notes.trim()
       if (form.recurrence === 'ODOMETER') {
@@ -85,9 +92,6 @@ export default function RemindersPage() {
       } else {
         if (!form.dueAt) throw new Error('Due date is required')
         body.dueAt = new Date(form.dueAt).toISOString()
-      }
-      if (form.linkType && form.linkId) {
-        body.linkedRefs = [{ type: form.linkType, id: form.linkId }]
       }
       await apiClient.post('/reminders', body)
       setForm(EMPTY_FORM)
@@ -195,35 +199,30 @@ export default function RemindersPage() {
           )}
 
           <div className="grid grid-cols-2 gap-2">
-            <select className="rounded-md border px-3 py-2 text-sm"
+            <select className="rounded-md border px-3 py-2 text-sm" required
                     value={form.linkType}
-                    onChange={(e) => setForm({ ...form, linkType: e.target.value as any, linkId: '' })}>
-              <option value="">No link</option>
-              <option value="MEMBER">Member</option>
-              <option value="CONTACT">Contact</option>
+                    onChange={(e) => setForm({ ...form, linkType: e.target.value as AssetLinkType, linkId: '' })}>
+              <option value="">Asset type…</option>
               <option value="HOME">Home</option>
               <option value="VEHICLE">Vehicle</option>
               <option value="APPLIANCE">Appliance</option>
               <option value="POLICY">Policy</option>
             </select>
-            <select className="rounded-md border px-3 py-2 text-sm"
+            <select className="rounded-md border px-3 py-2 text-sm" required
                     value={form.linkId}
                     onChange={(e) => setForm({ ...form, linkId: e.target.value })}
                     disabled={!form.linkType}>
-              <option value="">Select…</option>
-              {form.linkType === 'MEMBER' && members.map((m) => (
-                <option key={m.id} value={m.id}>{m.name}</option>
-              ))}
-              {form.linkType === 'CONTACT' && contacts.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-              {(form.linkType === 'HOME' || form.linkType === 'VEHICLE'
-                || form.linkType === 'APPLIANCE' || form.linkType === 'POLICY')
-                && assets.filter((a) => a.type === form.linkType).map((a) => (
+              <option value="">Select asset…</option>
+              {form.linkType && assets.filter((a) => a.type === form.linkType).map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
             </select>
           </div>
+          {form.linkType && assets.filter((a) => a.type === form.linkType).length === 0 && (
+            <p className="text-xs text-muted-foreground">
+              No {form.linkType.toLowerCase()} assets yet. Create one on the Assets page first.
+            </p>
+          )}
 
           <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
         </form>

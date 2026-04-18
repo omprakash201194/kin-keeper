@@ -547,10 +547,13 @@ public class KinKeeperAgent {
                         "List all reminders for the family, with dueAt/completed status.",
                         schema(Map.of(), List.of())),
                 tool("create_reminder",
-                        "Create a reminder. For date-based: supply dueAt (ISO-8601) + optional recurrence. " +
+                        "Create a reminder. Every reminder MUST be linked to at least one asset " +
+                                "(HOME/VEHICLE/APPLIANCE/POLICY) via linkedRefs — if the user's request doesn't " +
+                                "obviously map to an existing asset, call create_asset first. " +
+                                "For date-based: supply dueAt (ISO-8601) + optional recurrence. " +
                                 "For odometer (vehicle servicing): set recurrence=ODOMETER, dueOdometerKm=next target, " +
-                                "recurrenceIntervalKm=interval, and linkedRefs=[{type:VEHICLE,id:...}]. " +
-                                "linkedRefs may contain any subject types to tie the reminder to documents/assets/members.",
+                                "recurrenceIntervalKm=interval, and include the VEHICLE in linkedRefs. " +
+                                "Members/contacts/documents can also appear in linkedRefs in addition to the required asset.",
                         schema(Map.of(
                                 "title", Map.of("type", "string"),
                                 "notes", Map.of("type", "string"),

@@ -82,6 +82,11 @@ public class ReminderService {
         } else if (form.getDueAt() == null) {
             throw new IllegalArgumentException("dueAt is required for date-based reminders");
         }
+        if (!hasAssetLink(form.getLinkedRefs())) {
+            throw new IllegalArgumentException(
+                    "Every reminder must be linked to at least one asset (HOME/VEHICLE/APPLIANCE/POLICY). "
+                            + "Create the asset first, then attach the reminder to it.");
+        }
 
         DocumentReference ref = firestore.collection(COLLECTION).document();
         Reminder r = Reminder.builder()
@@ -146,6 +151,20 @@ public class ReminderService {
         requireInFamily(familyId, id);
         firestore.collection(COLLECTION).document(id).delete().get();
         log.info("Deleted reminder {} from family {}", id, familyId);
+    }
+
+    private static boolean hasAssetLink(List<LinkRef> refs) {
+        if (refs == null) return false;
+        for (LinkRef ref : refs) {
+            if (ref.getType() == null) continue;
+            switch (ref.getType()) {
+                case HOME, VEHICLE, APPLIANCE, POLICY -> {
+                    return true;
+                }
+                default -> { /* keep looking */ }
+            }
+        }
+        return false;
     }
 
     private boolean isOdometerDue(String familyId, Reminder r) throws ExecutionException, InterruptedException {
