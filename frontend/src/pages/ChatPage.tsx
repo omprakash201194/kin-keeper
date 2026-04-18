@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { Button } from '@/components/ui/button'
 import { Send } from 'lucide-react'
 import apiClient from '@/services/api'
@@ -74,13 +75,37 @@ export default function ChatPage() {
             className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-[70%] rounded-lg px-4 py-2 text-sm whitespace-pre-wrap ${
+              className={`max-w-[70%] rounded-lg px-4 py-2 text-sm ${
                 msg.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-primary text-primary-foreground whitespace-pre-wrap'
                   : 'bg-muted text-foreground'
               }`}
             >
-              {msg.content}
+              {msg.role === 'assistant' ? (
+                <ReactMarkdown
+                  components={{
+                    p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
+                    ul: ({ children }) => <ul className="list-disc pl-5 my-1 space-y-0.5">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-5 my-1 space-y-0.5">{children}</ol>,
+                    li: ({ children }) => <li className="my-0">{children}</li>,
+                    h1: ({ children }) => <h1 className="text-base font-semibold mt-2 mb-1">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-sm font-semibold mt-2 mb-1">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-sm font-semibold mt-2 mb-1">{children}</h3>,
+                    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+                    em: ({ children }) => <em className="italic">{children}</em>,
+                    code: ({ children }) => (
+                      <code className="bg-background px-1 py-0.5 rounded text-xs">{children}</code>
+                    ),
+                    a: ({ href, children }) => (
+                      <a href={href} className="underline" target="_blank" rel="noreferrer">{children}</a>
+                    ),
+                  }}
+                >
+                  {msg.content}
+                </ReactMarkdown>
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}

@@ -60,7 +60,30 @@ public class UserService {
         }
 
         maybeAutoAcceptInvite(principal.uid(), principal.email());
+        ensureRoleConsistent(principal.uid());
         return getUserByUid(principal.uid());
+    }
+
+    private void ensureRoleConsistent(String uid) throws ExecutionException, InterruptedException {
+        DocumentSnapshot user = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!user.exists()) return;
+        Object familyId = user.get("familyId");
+        Object role = user.get("role");
+        if (familyId == null || familyId.toString().isBlank()) return;
+        if (role != null && !role.toString().isBlank()) return;
+
+        // reason: slice-4 shipped after some users had already created families; their user
+        // doc has familyId but no role. Derive from family.adminUid so the admin UI renders.
+        DocumentSnapshot family = firestore.collection("families")
+                .document(familyId.toString()).get().get();
+        if (!family.exists()) return;
+        Object adminUid = family.get("adminUid");
+        String derivedRole = uid.equals(adminUid) ? ROLE_ADMIN : ROLE_VIEWER;
+        firestore.collection(USERS_COLLECTION).document(uid).update(Map.of(
+                "role", derivedRole,
+                "updatedAt", Instant.now().toString()
+        )).get();
+        log.info("Backfilled role={} for user {}", derivedRole, uid);
     }
 
     private void maybeAutoAcceptInvite(String uid, String email)
