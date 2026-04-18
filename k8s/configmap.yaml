@@ -7,5 +7,5 @@ data:
   FIREBASE_PROJECT_ID: "kin-keeper-7a525"
   FIREBASE_CREDENTIALS_PATH: "/etc/firebase/firebase-service-account.json"
   JAVA_TOOL_OPTIONS: "-XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0"
-  GOOGLE_OAUTH_REDIRECT_URI: "https://kin-keeper.homelab.local/api/drive/callback"
+  GOOGLE_OAUTH_REDIRECT_URI: "https://ogautam-homelab.tail38d2ad.ts.net/api/drive/callback"
   GOOGLE_OAUTH_FRONTEND_REDIRECT: "/settings"

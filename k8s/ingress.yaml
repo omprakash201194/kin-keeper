@@ -11,9 +11,20 @@ spec:
   tls:
     - hosts:
         - kin-keeper.homelab.local
+        - ogautam-homelab.tail38d2ad.ts.net
       secretName: kin-keeper-tls
   rules:
     - host: kin-keeper.homelab.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kin-keeper-frontend
+                port:
+                  number: 80
+    - host: ogautam-homelab.tail38d2ad.ts.net
       http:
         paths:
           - path: /
