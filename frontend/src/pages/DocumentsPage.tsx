@@ -18,6 +18,7 @@ type DocumentRow = {
   fileSize: number
   memberId: string
   categoryId: string
+  tags?: string[]
   uploadedAt: string
 }
 
@@ -30,6 +31,7 @@ export default function DocumentsPage() {
 
   const [memberFilter, setMemberFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('')
+  const [labelFilter, setLabelFilter] = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'member' | 'category'>('none')
 
   const [showUpload, setShowUpload] = useState(false)
@@ -37,6 +39,7 @@ export default function DocumentsPage() {
   const [uploadMemberId, setUploadMemberId] = useState('')
   const [uploadCategoryId, setUploadCategoryId] = useState('')
   const [uploadNotes, setUploadNotes] = useState('')
+  const [uploadLabels, setUploadLabels] = useState('')
   const [uploading, setUploading] = useState(false)
 
   const [error, setError] = useState<string | null>(null)
@@ -47,7 +50,7 @@ export default function DocumentsPage() {
 
   useEffect(() => {
     void reloadDocuments()
-  }, [memberFilter, categoryFilter])
+  }, [memberFilter, categoryFilter, labelFilter])
 
   async function loadAll() {
     setLoading(true)
@@ -72,6 +75,7 @@ export default function DocumentsPage() {
       const params: Record<string, string> = {}
       if (memberFilter) params.memberId = memberFilter
       if (categoryFilter) params.categoryId = categoryFilter
+      if (labelFilter) params.label = labelFilter
       const res = await apiClient.get<DocumentRow[]>('/documents', { params })
       setDocuments(res.data)
     } catch (e: any) {
@@ -88,6 +92,7 @@ export default function DocumentsPage() {
     form.append('memberId', uploadMemberId)
     form.append('categoryId', uploadCategoryId)
     if (uploadNotes.trim()) form.append('notes', uploadNotes.trim())
+    if (uploadLabels.trim()) form.append('labels', uploadLabels.trim())
 
     setUploading(true)
     setError(null)
@@ -99,6 +104,7 @@ export default function DocumentsPage() {
       setUploadMemberId('')
       setUploadCategoryId('')
       setUploadNotes('')
+      setUploadLabels('')
       setShowUpload(false)
       await reloadDocuments()
     } catch (e: any) {
@@ -135,6 +141,12 @@ export default function DocumentsPage() {
   }
 
   const categoryTree = useMemo(() => flattenCategoryTree(categories), [categories])
+
+  const allLabels = useMemo(() => {
+    const s = new Set<string>()
+    for (const d of documents) for (const t of d.tags ?? []) if (t) s.add(t)
+    return Array.from(s).sort((a, b) => a.localeCompare(b))
+  }, [documents])
 
   const groups = useMemo(() => {
     if (groupBy === 'none') return null
@@ -232,6 +244,13 @@ export default function DocumentsPage() {
               ))}
             </select>
           </div>
+          <input
+            type="text"
+            value={uploadLabels}
+            onChange={(e) => setUploadLabels(e.target.value)}
+            placeholder="Labels (comma-separated, e.g. Mumbai, Home)"
+            className="w-full rounded-md border px-3 py-2 text-sm"
+          />
           <textarea
             value={uploadNotes}
             onChange={(e) => setUploadNotes(e.target.value)}
@@ -268,6 +287,20 @@ export default function DocumentsPage() {
             </option>
           ))}
         </select>
+
+        <input
+          type="text"
+          list="label-suggestions"
+          value={labelFilter}
+          onChange={(e) => setLabelFilter(e.target.value)}
+          placeholder="Filter label…"
+          className="rounded-md border px-3 py-2 text-sm w-36"
+        />
+        <datalist id="label-suggestions">
+          {allLabels.map((l) => (
+            <option key={l} value={l} />
+          ))}
+        </datalist>
 
         <div className="ml-auto flex items-center gap-1 text-xs">
           <span className="text-muted-foreground mr-1">Group by:</span>
@@ -329,6 +362,20 @@ export default function DocumentsPage() {
           <div className="min-w-0">
             <p className="font-medium truncate">{doc.fileName}</p>
             <p className="text-xs text-muted-foreground">{meta.join(' · ')}</p>
+            {doc.tags && doc.tags.length > 0 && (
+              <div className="mt-1 flex flex-wrap gap-1">
+                {doc.tags.map((t) => (
+                  <span
+                    key={t}
+                    onClick={() => setLabelFilter(t)}
+                    className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground cursor-pointer hover:bg-primary hover:text-primary-foreground transition"
+                    title={`Filter by label "${t}"`}
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="flex gap-1 shrink-0">

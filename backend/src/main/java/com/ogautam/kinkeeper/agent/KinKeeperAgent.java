@@ -183,7 +183,8 @@ public class KinKeeperAgent {
                         principal,
                         (String) input.get("query"),
                         (String) input.get("memberId"),
-                        (String) input.get("categoryId")));
+                        (String) input.get("categoryId"),
+                        (String) input.get("label")));
                 case "list_members" -> toJson(familyService.listMembers(principal));
                 case "list_categories" -> {
                     var family = familyService.getFamilyForUser(principal.uid());
@@ -232,11 +233,12 @@ public class KinKeeperAgent {
     private List<Tool> buildTools() {
         return List.of(
                 tool("search_documents",
-                        "Search documents by a text query (matches filename, notes, and tags). Optional memberId and categoryId filters.",
+                        "Search documents by a text query (matches filename, notes, and labels). Optional memberId, categoryId, and label filters. Use label to filter by a specific tag like 'Mumbai' or 'Pune'.",
                         schema(Map.of(
-                                "query", Map.of("type", "string", "description", "case-insensitive substring match"),
+                                "query", Map.of("type", "string", "description", "case-insensitive substring match across filename/notes/labels"),
                                 "memberId", Map.of("type", "string", "description", "optional: restrict to this member"),
-                                "categoryId", Map.of("type", "string", "description", "optional: restrict to this category")
+                                "categoryId", Map.of("type", "string", "description", "optional: restrict to this category"),
+                                "label", Map.of("type", "string", "description", "optional: exact label to match (case-insensitive)")
                         ), List.of("query"))),
                 tool("list_members",
                         "List the family members in the user's family vault.",

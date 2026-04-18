@@ -43,7 +43,8 @@ public class DocumentService {
                                    InputStream content,
                                    String memberId,
                                    String categoryId,
-                                   String notes)
+                                   String notes,
+                                   List<String> labels)
             throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
         Family family = requireFamily(principal);
         String driveFileId = driveService.uploadFile(family.getAdminUid(), fileName, mimeType, content);
@@ -59,11 +60,22 @@ public class DocumentService {
                 .fileSize(fileSize)
                 .driveFileId(driveFileId)
                 .notes(notes)
+                .tags(labels != null ? labels : List.of())
                 .uploadedBy(principal.uid())
                 .uploadedAt(Instant.now())
                 .build();
         ref.set(doc).get();
-        log.info("Uploaded document {} ({}) for family {}", ref.getId(), fileName, family.getId());
+        log.info("Uploaded document {} ({}) for family {} labels={}", ref.getId(), fileName, family.getId(), doc.getTags());
+        return doc;
+    }
+
+    public Document setLabels(FirebaseUserPrincipal principal, String id, List<String> labels)
+            throws ExecutionException, InterruptedException {
+        Document doc = loadAndAuthorize(principal, id);
+        List<String> normalized = labels != null ? labels : List.of();
+        firestore.collection(DOCUMENTS_COLLECTION).document(id).update("tags", normalized).get();
+        doc.setTags(normalized);
+        log.info("Updated labels on document {} to {}", id, normalized);
         return doc;
     }
 
@@ -105,9 +117,14 @@ public class DocumentService {
     public List<Document> searchDocuments(FirebaseUserPrincipal principal,
                                           String query,
                                           String memberId,
-                                          String categoryId)
+                                          String categoryId,
+                                          String label)
             throws ExecutionException, InterruptedException {
         List<Document> all = listDocuments(principal, memberId, categoryId);
+        if (label != null && !label.isBlank()) {
+            String labelNeedle = label.toLowerCase();
+            all.removeIf(d -> !tagsContain(d.getTags(), labelNeedle));
+        }
         if (query == null || query.isBlank()) {
             return all;
         }

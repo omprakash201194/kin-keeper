@@ -32,8 +32,11 @@ public class DocumentController {
     @GetMapping
     public ResponseEntity<?> list(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                   @RequestParam(required = false) String memberId,
-                                  @RequestParam(required = false) String categoryId) throws Exception {
-        List<Document> docs = documentService.listDocuments(principal, memberId, categoryId);
+                                  @RequestParam(required = false) String categoryId,
+                                  @RequestParam(required = false) String label) throws Exception {
+        List<Document> docs = label == null || label.isBlank()
+                ? documentService.listDocuments(principal, memberId, categoryId)
+                : documentService.searchDocuments(principal, null, memberId, categoryId, label);
         return ResponseEntity.ok(docs);
     }
 
@@ -42,7 +45,8 @@ public class DocumentController {
                                     @RequestParam("file") MultipartFile file,
                                     @RequestParam String memberId,
                                     @RequestParam String categoryId,
-                                    @RequestParam(required = false) String notes) throws Exception {
+                                    @RequestParam(required = false) String notes,
+                                    @RequestParam(required = false) String labels) throws Exception {
         userService.requireAdmin(principal.uid());
         if (file.isEmpty()) {
             throw new IllegalArgumentException("file is empty");
@@ -56,8 +60,36 @@ public class DocumentController {
                 file.getInputStream(),
                 memberId,
                 categoryId,
-                notes);
+                notes,
+                parseLabels(labels));
         return ResponseEntity.ok(doc);
+    }
+
+    @PutMapping("/{id}/labels")
+    public ResponseEntity<?> updateLabels(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                          @PathVariable String id,
+                                          @RequestBody Map<String, Object> body) throws Exception {
+        userService.requireAdmin(principal.uid());
+        Object raw = body.get("labels");
+        List<String> labels;
+        if (raw instanceof List<?> list) {
+            labels = list.stream().filter(v -> v != null).map(Object::toString).map(String::trim)
+                    .filter(s -> !s.isBlank()).toList();
+        } else if (raw instanceof String s) {
+            labels = parseLabels(s);
+        } else {
+            labels = List.of();
+        }
+        return ResponseEntity.ok(documentService.setLabels(principal, id, labels));
+    }
+
+    private static List<String> parseLabels(String csv) {
+        if (csv == null || csv.isBlank()) return List.of();
+        return java.util.Arrays.stream(csv.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isBlank())
+                .distinct()
+                .toList();
     }
 
     @GetMapping("/{id}")
