@@ -1,6 +1,10 @@
 spring:
   application:
     name: kin-keeper
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 50MB
 
 server:
   port: 8080

@@ -25,9 +25,11 @@ public class FamilyService {
     private static final String MEMBERS_COLLECTION = "members";
 
     private final Firestore firestore;
+    private final CategoryService categoryService;
 
-    public FamilyService(Firestore firestore) {
+    public FamilyService(Firestore firestore, CategoryService categoryService) {
         this.firestore = firestore;
+        this.categoryService = categoryService;
     }
 
     public Family createFamily(FirebaseUserPrincipal principal, String name)
@@ -48,6 +50,8 @@ public class FamilyService {
 
         firestore.collection(USERS_COLLECTION).document(principal.uid())
                 .update("familyId", ref.getId()).get();
+
+        categoryService.seedDefaults(ref.getId());
 
         log.info("Created family {} for admin {}", ref.getId(), principal.email());
         return family;
