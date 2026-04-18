@@ -92,7 +92,10 @@ public class FamilyService {
 
     public List<FamilyMember> listMembers(FirebaseUserPrincipal principal)
             throws ExecutionException, InterruptedException {
-        String familyId = requireFamilyId(principal);
+        String familyId = getUserFamilyId(principal.uid());
+        if (familyId == null) {
+            return List.of();
+        }
         List<QueryDocumentSnapshot> docs = firestore.collection(MEMBERS_COLLECTION)
                 .whereEqualTo("familyId", familyId)
                 .get().get()

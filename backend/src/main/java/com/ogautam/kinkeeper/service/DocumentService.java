@@ -69,7 +69,10 @@ public class DocumentService {
 
     public List<Document> listDocuments(FirebaseUserPrincipal principal, String memberId, String categoryId)
             throws ExecutionException, InterruptedException {
-        Family family = requireFamily(principal);
+        Family family = familyService.getFamilyForUser(principal.uid());
+        if (family == null) {
+            return List.of();
+        }
         Query query = firestore.collection(DOCUMENTS_COLLECTION)
                 .whereEqualTo("familyId", family.getId());
         if (memberId != null && !memberId.isBlank()) {

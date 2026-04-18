@@ -45,12 +45,8 @@ public class FamilyController {
     }
 
     @GetMapping
-    public ResponseEntity<?> get(@AuthenticationPrincipal FirebaseUserPrincipal principal) throws Exception {
-        Family family = familyService.getFamilyForUser(principal.uid());
-        if (family == null) {
-            return ResponseEntity.ok(Map.of("family", (Object) null));
-        }
-        return ResponseEntity.ok(family);
+    public ResponseEntity<Family> get(@AuthenticationPrincipal FirebaseUserPrincipal principal) throws Exception {
+        return ResponseEntity.ok(familyService.getFamilyForUser(principal.uid()));
     }
 
     @PostMapping("/members")
