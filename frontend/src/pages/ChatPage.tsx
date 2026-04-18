@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import { Button } from '@/components/ui/button'
-import { Send, Plus, MessageSquare, Trash2 } from 'lucide-react'
+import { Send, Plus, MessageSquare, Trash2, Paperclip, Camera, X } from 'lucide-react'
 import apiClient from '@/services/api'
 
 type ChatSession = {
@@ -27,11 +27,14 @@ export default function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [attachment, setAttachment] = useState<File | null>(null)
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void loadSessions(true)
@@ -108,7 +111,7 @@ export default function ChatPage() {
 
   async function handleSend() {
     const text = input.trim()
-    if (!text || sending) return
+    if ((!text && !attachment) || sending) return
 
     let sessionId = activeId
     if (!sessionId) {
@@ -123,22 +126,36 @@ export default function ChatPage() {
       }
     }
 
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: text }
+    const pending = attachment
+    const displayText = pending
+      ? (text ? `${text}\n\n[attached: ${pending.name}]` : `[attached: ${pending.name}]`)
+      : text
+    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: displayText }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
+    setAttachment(null)
     setError(null)
     setSending(true)
 
     try {
+      let attachmentId: string | null = null
+      if (pending) {
+        const form = new FormData()
+        form.append('file', pending)
+        const up = await apiClient.post<{ attachmentId: string }>('/chat/attachments', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        attachmentId = up.data.attachmentId
+      }
+
       const res = await apiClient.post<{ reply: string; messageId: string }>(
         `/chat/sessions/${sessionId}/message`,
-        { message: text },
+        { message: text, attachmentId },
       )
       setMessages((prev) => [
         ...prev,
         { id: res.data.messageId, role: 'assistant', content: res.data.reply },
       ])
-      // Refresh sessions so the auto-generated title shows up in the sidebar.
       void loadSessions(false)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Chat failed. Have you added your Claude API key in Settings?')
@@ -277,18 +294,64 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="border-t p-4">
-          <div className="flex gap-2">
+        <div className="border-t p-4 space-y-2">
+          {attachment && (
+            <div className="flex items-center justify-between bg-muted px-3 py-1.5 rounded-md text-xs">
+              <span className="truncate">📎 {attachment.name} ({Math.round(attachment.size/1024)} KB)</span>
+              <button
+                onClick={() => setAttachment(null)}
+                className="text-muted-foreground hover:text-red-600 ml-2"
+                title="Remove attachment"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              title="Attach file"
+            >
+              <Paperclip className="w-4 h-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={() => cameraInputRef.current?.click()}
+              disabled={sending}
+              title="Scan with camera"
+            >
+              <Camera className="w-4 h-4" />
+            </Button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+            />
+            <input
+              ref={cameraInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              className="hidden"
+              onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+            />
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder="Ask about your documents..."
+              placeholder={attachment ? 'Describe the document (optional)…' : 'Ask about your documents...'}
               disabled={sending}
               className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
             />
-            <Button onClick={handleSend} size="icon" disabled={sending || !input.trim()}>
+            <Button onClick={handleSend} size="icon" disabled={sending || (!input.trim() && !attachment)}>
               <Send className="w-4 h-4" />
             </Button>
           </div>

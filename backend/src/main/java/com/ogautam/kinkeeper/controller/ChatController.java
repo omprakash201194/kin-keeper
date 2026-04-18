@@ -1,5 +1,6 @@
 package com.ogautam.kinkeeper.controller;
 
+import com.ogautam.kinkeeper.agent.AttachmentService;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent.ChatReply;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent.ChatTurn;
@@ -11,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,10 +25,12 @@ public class ChatController {
 
     private final KinKeeperAgent agent;
     private final ChatSessionService sessions;
+    private final AttachmentService attachments;
 
-    public ChatController(KinKeeperAgent agent, ChatSessionService sessions) {
+    public ChatController(KinKeeperAgent agent, ChatSessionService sessions, AttachmentService attachments) {
         this.agent = agent;
         this.sessions = sessions;
+        this.attachments = attachments;
     }
 
     @GetMapping("/sessions")
@@ -58,8 +62,9 @@ public class ChatController {
     public ResponseEntity<?> message(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                      @PathVariable String id,
                                      @RequestBody SendRequest body) throws Exception {
-        if (body.message() == null || body.message().isBlank()) {
-            throw new IllegalArgumentException("message is required");
+        if ((body.message() == null || body.message().isBlank())
+                && (body.attachmentId() == null || body.attachmentId().isBlank())) {
+            throw new IllegalArgumentException("message or attachmentId is required");
         }
 
         List<ChatMessage> existing = sessions.listMessages(principal, id);
@@ -68,11 +73,35 @@ public class ChatController {
             turns.add(new ChatTurn(m.getRole(), m.getContent()));
         }
 
-        sessions.appendMessage(principal, id, "user", body.message());
-        ChatReply reply = agent.chat(principal, turns, body.message());
+        String userContent = body.message() == null ? "" : body.message();
+        String renderedUser = body.attachmentId() != null && !body.attachmentId().isBlank()
+                ? (userContent.isBlank() ? "[attached file]" : userContent + "\n\n[attached file]")
+                : userContent;
+        sessions.appendMessage(principal, id, "user", renderedUser);
+
+        ChatReply reply = agent.chat(principal, turns, userContent, body.attachmentId());
         ChatMessage assistant = sessions.appendMessage(principal, id, "assistant", reply.text());
         return ResponseEntity.ok(Map.of("reply", reply.text(), "messageId", assistant.getId()));
     }
 
-    public record SendRequest(String message) {}
+    @PostMapping("/attachments")
+    public ResponseEntity<?> stageAttachment(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                             @RequestParam("file") MultipartFile file) throws Exception {
+        if (file.isEmpty()) {
+            throw new IllegalArgumentException("file is empty");
+        }
+        String mime = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        AttachmentService.Staged staged = attachments.stage(
+                principal.uid(),
+                file.getOriginalFilename(),
+                mime,
+                file.getBytes());
+        return ResponseEntity.ok(Map.of(
+                "attachmentId", staged.id(),
+                "fileName", staged.fileName() == null ? "" : staged.fileName(),
+                "mimeType", staged.mimeType(),
+                "size", staged.size()));
+    }
+
+    public record SendRequest(String message, String attachmentId) {}
 }
