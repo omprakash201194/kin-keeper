@@ -101,4 +101,40 @@ public class UserService {
         firestore.collection(USERS_COLLECTION).document(uid).update(updates).get();
         log.info("Deleted Claude API key for user {}", uid);
     }
+
+    public boolean hasDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
+        DocumentSnapshot doc = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!doc.exists()) return false;
+        Object val = doc.get("driveRefreshTokenEncrypted");
+        return val != null && !val.toString().isBlank();
+    }
+
+    public void saveDriveRefreshToken(String uid, String plaintext) throws ExecutionException, InterruptedException {
+        if (plaintext == null || plaintext.isBlank()) {
+            throw new IllegalArgumentException("Refresh token is required");
+        }
+        String encrypted = cryptoService.encrypt(plaintext);
+        firestore.collection(USERS_COLLECTION).document(uid)
+                .update(Map.of(
+                        "driveRefreshTokenEncrypted", encrypted,
+                        "updatedAt", Instant.now().toString()
+                )).get();
+        log.info("Saved Drive refresh token for user {}", uid);
+    }
+
+    public String getDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
+        DocumentSnapshot doc = firestore.collection(USERS_COLLECTION).document(uid).get().get();
+        if (!doc.exists()) return null;
+        Object encrypted = doc.get("driveRefreshTokenEncrypted");
+        if (encrypted == null || encrypted.toString().isBlank()) return null;
+        return cryptoService.decrypt(encrypted.toString());
+    }
+
+    public void deleteDriveRefreshToken(String uid) throws ExecutionException, InterruptedException {
+        Map<String, Object> updates = new HashMap<>();
+        updates.put("driveRefreshTokenEncrypted", FieldValue.delete());
+        updates.put("updatedAt", Instant.now().toString());
+        firestore.collection(USERS_COLLECTION).document(uid).update(updates).get();
+        log.info("Deleted Drive refresh token for user {}", uid);
+    }
 }

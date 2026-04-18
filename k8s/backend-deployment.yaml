@@ -34,6 +34,9 @@ spec:
                 name: kin-keeper-config
             - secretRef:
                 name: kin-keeper-encryption-key
+            - secretRef:
+                name: kin-keeper-google-oauth
+                optional: true
           volumeMounts:
             - name: firebase-credentials
               mountPath: /etc/firebase

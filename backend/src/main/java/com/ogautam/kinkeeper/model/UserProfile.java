@@ -18,6 +18,7 @@ public class UserProfile {
     private String photoUrl;
     private String familyId;
     private String claudeApiKeyEncrypted;
+    private String driveRefreshTokenEncrypted;
     private Instant createdAt;
     private Instant updatedAt;
 }

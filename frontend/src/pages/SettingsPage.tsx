@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
-import { Key, User } from 'lucide-react'
+import { Key, User, Cloud } from 'lucide-react'
 import apiClient from '@/services/api'
 
 export default function SettingsPage() {
@@ -11,17 +11,36 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  const [driveConnected, setDriveConnected] = useState(false)
+  const [driveConfigured, setDriveConfigured] = useState(true)
+  const [driveWorking, setDriveWorking] = useState(false)
+
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
 
   useEffect(() => {
+    // Handle redirect-back from the Drive OAuth callback
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('driveConnected') === '1') {
+      setStatus('Google Drive connected.')
+      window.history.replaceState({}, '', window.location.pathname)
+    } else if (params.get('driveError')) {
+      setError(`Drive connect failed: ${params.get('driveError')}`)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
     void refresh()
   }, [])
 
   async function refresh() {
     try {
-      const res = await apiClient.get<{ hasApiKey: boolean }>('/settings')
-      setHasApiKey(res.data.hasApiKey)
+      const [settingsRes, driveRes] = await Promise.all([
+        apiClient.get<{ hasApiKey: boolean }>('/settings'),
+        apiClient.get<{ connected: boolean; configured: boolean }>('/drive/status'),
+      ])
+      setHasApiKey(settingsRes.data.hasApiKey)
+      setDriveConnected(driveRes.data.connected)
+      setDriveConfigured(driveRes.data.configured)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load settings')
     } finally {
@@ -29,7 +48,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleSave() {
+  async function handleSaveKey() {
     if (!apiKey.trim()) return
     setSaving(true)
     setError(null)
@@ -46,7 +65,7 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleDelete() {
+  async function handleDeleteKey() {
     if (!confirm('Remove your Claude API key? The AI chat assistant will stop working until you add one again.')) {
       return
     }
@@ -61,6 +80,37 @@ export default function SettingsPage() {
       setError(e?.response?.data?.error ?? 'Failed to remove key')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  async function handleConnectDrive() {
+    setDriveWorking(true)
+    setError(null)
+    setStatus(null)
+    try {
+      const res = await apiClient.get<{ url: string }>('/drive/connect')
+      window.location.href = res.data.url
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to start Drive connect')
+      setDriveWorking(false)
+    }
+  }
+
+  async function handleDisconnectDrive() {
+    if (!confirm('Disconnect Google Drive? Existing documents stay in your Drive but Kin-Keeper can no longer upload or read them.')) {
+      return
+    }
+    setDriveWorking(true)
+    setError(null)
+    setStatus(null)
+    try {
+      await apiClient.delete('/drive/connect')
+      setDriveConnected(false)
+      setStatus('Google Drive disconnected.')
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to disconnect Drive')
+    } finally {
+      setDriveWorking(false)
     }
   }
 
@@ -86,6 +136,39 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* Google Drive */}
+      <section className="mb-8">
+        <h2 className="flex items-center gap-2 text-lg font-medium mb-4">
+          <Cloud className="w-5 h-5" />
+          Google Drive
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Kin-Keeper stores documents in your own Google Drive under a folder called "Kin-Keeper".
+          We only access files we create — never anything else.
+        </p>
+
+        {!loading && !driveConfigured && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Server-side Google OAuth is not configured yet. Ask the admin to set up credentials.
+          </div>
+        )}
+
+        {!loading && driveConfigured && (
+          driveConnected ? (
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm flex items-center justify-between">
+              <span className="text-emerald-900">Connected to Google Drive.</span>
+              <Button variant="outline" size="sm" onClick={handleDisconnectDrive} disabled={driveWorking}>
+                {driveWorking ? 'Working…' : 'Disconnect'}
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={handleConnectDrive} disabled={driveWorking}>
+              {driveWorking ? 'Redirecting…' : 'Connect Google Drive'}
+            </Button>
+          )
+        )}
+      </section>
+
       {/* Claude API Key */}
       <section className="mb-8">
         <h2 className="flex items-center gap-2 text-lg font-medium mb-4">
@@ -100,7 +183,7 @@ export default function SettingsPage() {
         {!loading && hasApiKey && (
           <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm flex items-center justify-between">
             <span className="text-emerald-900">A key is saved. Enter a new one below to replace it.</span>
-            <Button variant="outline" size="sm" onClick={handleDelete} disabled={deleting}>
+            <Button variant="outline" size="sm" onClick={handleDeleteKey} disabled={deleting}>
               {deleting ? 'Removing…' : 'Remove'}
             </Button>
           </div>
@@ -114,14 +197,14 @@ export default function SettingsPage() {
             placeholder="sk-ant-..."
             className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
           />
-          <Button onClick={handleSave} disabled={saving || !apiKey.trim()}>
+          <Button onClick={handleSaveKey} disabled={saving || !apiKey.trim()}>
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </div>
-
-        {status && <p className="mt-3 text-sm text-emerald-700">{status}</p>}
-        {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
       </section>
+
+      {status && <p className="mt-3 text-sm text-emerald-700">{status}</p>}
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
     </div>
   )
 }

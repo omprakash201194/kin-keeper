@@ -24,6 +24,7 @@ public class CryptoService {
     private final String keyBase64;
     private final SecureRandom random = new SecureRandom();
     private SecretKey key;
+    private byte[] rawKey;
 
     public CryptoService(@Value("${KINKEEPER_ENCRYPTION_KEY:}") String keyBase64) {
         this.keyBase64 = keyBase64;
@@ -39,7 +40,12 @@ public class CryptoService {
             throw new IllegalStateException(
                     "KINKEEPER_ENCRYPTION_KEY must decode to 32 bytes (got " + keyBytes.length + ")");
         }
+        this.rawKey = keyBytes;
         this.key = new SecretKeySpec(keyBytes, "AES");
+    }
+
+    public byte[] stateSigningKey() {
+        return rawKey;
     }
 
     public String encrypt(String plaintext) {
