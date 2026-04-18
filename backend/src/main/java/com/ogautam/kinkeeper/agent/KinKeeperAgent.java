@@ -170,7 +170,8 @@ public class KinKeeperAgent {
     private String runTool(FirebaseUserPrincipal principal, ToolUseBlock tu) {
         try {
             Map<String, Object> input = parseInput(tu._input());
-            return switch (tu.name()) {
+            log.info("Tool call: {} input={}", tu.name(), input);
+            String result = switch (tu.name()) {
                 case "search_documents" -> toJson(documentService.searchDocuments(
                         principal,
                         (String) input.get("query"),
@@ -191,6 +192,9 @@ public class KinKeeperAgent {
                         (String) input.get("categoryId")));
                 default -> "{\"error\":\"unknown tool\"}";
             };
+            String preview = result.length() > 400 ? result.substring(0, 400) + "…(truncated)" : result;
+            log.info("Tool result: {} bytes={} preview={}", tu.name(), result.length(), preview);
+            return result;
         } catch (Exception e) {
             log.warn("Tool {} failed: {}", tu.name(), e.getMessage());
             return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
@@ -200,9 +204,16 @@ public class KinKeeperAgent {
     @SuppressWarnings("unchecked")
     private Map<String, Object> parseInput(JsonValue raw) {
         try {
-            String json = objectMapper.writeValueAsString(raw.convert(Object.class));
+            // Anthropic's JsonValue serializes directly through Jackson via its toString().
+            // raw.convert(Object.class) worked in some SDK versions but not 2.25; use the
+            // JSON string round-trip which is version-stable.
+            String json = raw == null ? "{}" : raw.toString();
+            if (json == null || json.isBlank() || "null".equals(json)) {
+                return new HashMap<>();
+            }
             return objectMapper.readValue(json, Map.class);
         } catch (Exception e) {
+            log.warn("Failed to parse tool input: {}", e.getMessage());
             return new HashMap<>();
         }
     }
