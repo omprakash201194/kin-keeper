@@ -13,7 +13,10 @@ import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlock;
 import com.anthropic.models.messages.ToolUseBlockParam;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.ogautam.kinkeeper.model.Category;
 import com.ogautam.kinkeeper.model.Document;
 import com.ogautam.kinkeeper.model.FamilyMember;
@@ -52,7 +55,11 @@ public class KinKeeperAgent {
     private final CategoryService categoryService;
     private final UserService userService;
     private final String defaultModel;
-    private final ObjectMapper objectMapper = new ObjectMapper();
+    // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
+    // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
+    private final ObjectMapper objectMapper = new ObjectMapper()
+            .registerModule(new JavaTimeModule())
+            .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
 
     public KinKeeperAgent(DocumentService documentService,
                           FamilyService familyService,
@@ -201,17 +208,13 @@ public class KinKeeperAgent {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> parseInput(JsonValue raw) {
+        if (raw == null) return new HashMap<>();
         try {
-            // Anthropic's JsonValue serializes directly through Jackson via its toString().
-            // raw.convert(Object.class) worked in some SDK versions but not 2.25; use the
-            // JSON string round-trip which is version-stable.
-            String json = raw == null ? "{}" : raw.toString();
-            if (json == null || json.isBlank() || "null".equals(json)) {
-                return new HashMap<>();
-            }
-            return objectMapper.readValue(json, Map.class);
+            // Anthropic's JsonValue exposes a typed convert() that uses the SDK's own
+            // Jackson mapper — stable across SDK versions.
+            Map<String, Object> m = raw.convert(new TypeReference<Map<String, Object>>() {});
+            return m != null ? m : new HashMap<>();
         } catch (Exception e) {
             log.warn("Failed to parse tool input: {}", e.getMessage());
             return new HashMap<>();
