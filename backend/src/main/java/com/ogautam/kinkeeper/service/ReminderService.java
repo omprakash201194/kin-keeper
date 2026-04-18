@@ -82,10 +82,10 @@ public class ReminderService {
         } else if (form.getDueAt() == null) {
             throw new IllegalArgumentException("dueAt is required for date-based reminders");
         }
-        if (!hasAssetLink(form.getLinkedRefs())) {
+        if (!hasAnchorLink(form.getLinkedRefs())) {
             throw new IllegalArgumentException(
-                    "Every reminder must be linked to at least one asset (HOME/VEHICLE/APPLIANCE/POLICY). "
-                            + "Create the asset first, then attach the reminder to it.");
+                    "Every reminder must be anchored on an asset (HOME/VEHICLE/APPLIANCE/POLICY) "
+                            + "or a conversation. Pick one before saving.");
         }
 
         DocumentReference ref = firestore.collection(COLLECTION).document();
@@ -153,12 +153,12 @@ public class ReminderService {
         log.info("Deleted reminder {} from family {}", id, familyId);
     }
 
-    private static boolean hasAssetLink(List<LinkRef> refs) {
+    private static boolean hasAnchorLink(List<LinkRef> refs) {
         if (refs == null) return false;
         for (LinkRef ref : refs) {
             if (ref.getType() == null) continue;
             switch (ref.getType()) {
-                case HOME, VEHICLE, APPLIANCE, POLICY -> {
+                case HOME, VEHICLE, APPLIANCE, POLICY, CONVERSATION -> {
                     return true;
                 }
                 default -> { /* keep looking */ }

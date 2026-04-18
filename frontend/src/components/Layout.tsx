@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useReminderCount } from '@/hooks/useReminderCount'
 import {
   MessageSquare,
+  MessageCircle,
   FileText,
   FolderTree,
   Users,
@@ -19,14 +20,15 @@ import { clsx } from 'clsx'
 import { useState } from 'react'
 
 const nav = [
-  { to: '/chat',       label: 'Chat',       icon: MessageSquare },
-  { to: '/documents',  label: 'Documents',  icon: FileText },
-  { to: '/categories', label: 'Categories', icon: FolderTree },
-  { to: '/members',    label: 'Members',    icon: Users },
-  { to: '/contacts',   label: 'Contacts',   icon: UserCircle2 },
-  { to: '/assets',     label: 'Assets',     icon: Boxes },
-  { to: '/reminders',  label: 'Reminders',  icon: Bell, badgeKey: 'reminders' as const },
-  { to: '/settings',   label: 'Settings',   icon: Settings },
+  { to: '/chat',          label: 'Chat',          icon: MessageSquare },
+  { to: '/documents',     label: 'Documents',     icon: FileText },
+  { to: '/categories',    label: 'Categories',    icon: FolderTree },
+  { to: '/members',       label: 'Members',       icon: Users },
+  { to: '/contacts',      label: 'Contacts',      icon: UserCircle2 },
+  { to: '/conversations', label: 'Conversations', icon: MessageCircle },
+  { to: '/assets',        label: 'Assets',        icon: Boxes },
+  { to: '/reminders',     label: 'Reminders',     icon: Bell, badgeKey: 'reminders' as const },
+  { to: '/settings',      label: 'Settings',      icon: Settings },
 ]
 
 export default function Layout() {

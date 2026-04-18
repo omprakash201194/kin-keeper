@@ -30,6 +30,7 @@ public class CacheConfig {
     public static final String CACHE_CONTACTS = "contacts";
     public static final String CACHE_ASSETS = "assets";
     public static final String CACHE_REMINDERS = "reminders";
+    public static final String CACHE_CONVERSATIONS = "conversations";
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
@@ -55,15 +56,16 @@ public class CacheConfig {
                 .serializeValuesWith(
                         RedisSerializationContext.SerializationPair.fromSerializer(jsonSerializer));
 
-        Map<String, RedisCacheConfiguration> perCache = Map.of(
-                CACHE_USER_PROFILE, base.entryTtl(Duration.ofSeconds(60)),
-                CACHE_FAMILY_BY_USER, base.entryTtl(Duration.ofSeconds(60)),
-                CACHE_FAMILY_BY_ID, base.entryTtl(Duration.ofMinutes(5)),
-                CACHE_MEMBERS, base.entryTtl(Duration.ofMinutes(2)),
-                CACHE_CATEGORIES, base.entryTtl(Duration.ofMinutes(60)),
-                CACHE_CONTACTS, base.entryTtl(Duration.ofMinutes(5)),
-                CACHE_ASSETS, base.entryTtl(Duration.ofMinutes(5)),
-                CACHE_REMINDERS, base.entryTtl(Duration.ofSeconds(30)));
+        Map<String, RedisCacheConfiguration> perCache = Map.ofEntries(
+                Map.entry(CACHE_USER_PROFILE, base.entryTtl(Duration.ofSeconds(60))),
+                Map.entry(CACHE_FAMILY_BY_USER, base.entryTtl(Duration.ofSeconds(60))),
+                Map.entry(CACHE_FAMILY_BY_ID, base.entryTtl(Duration.ofMinutes(5))),
+                Map.entry(CACHE_MEMBERS, base.entryTtl(Duration.ofMinutes(2))),
+                Map.entry(CACHE_CATEGORIES, base.entryTtl(Duration.ofMinutes(60))),
+                Map.entry(CACHE_CONTACTS, base.entryTtl(Duration.ofMinutes(5))),
+                Map.entry(CACHE_ASSETS, base.entryTtl(Duration.ofMinutes(5))),
+                Map.entry(CACHE_REMINDERS, base.entryTtl(Duration.ofSeconds(30))),
+                Map.entry(CACHE_CONVERSATIONS, base.entryTtl(Duration.ofSeconds(60))));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(base)

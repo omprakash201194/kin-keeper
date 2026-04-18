@@ -84,7 +84,9 @@ kin-keeper/
 │       ├── model/                  # POJOs: UserProfile, Family, FamilyMember, Contact,
 │       │                           #        Asset (+AssetType), Category, Document (+LinkRef,
 │       │                           #        LinkType), Invite, ChatSession, ChatMessage,
-│       │                           #        Reminder (+ReminderRecurrence)
+│       │                           #        Reminder (+ReminderRecurrence),
+│       │                           #        Conversation (+ConversationFormat, Channel,
+│       │                           #        ConversationMessage)
 │       └── exception/              # Global error handler
 └── frontend/                       # React PWA
     └── src/
@@ -93,8 +95,8 @@ kin-keeper/
         ├── services/               # axios client with Firebase token interceptor
         ├── components/             # Layout, ProtectedRoute, shadcn ui/
         └── pages/                  # ChatPage, DocumentsPage, CategoriesPage, MembersPage,
-                                    # ContactsPage, AssetsPage, RemindersPage,
-                                    # SettingsPage, LoginPage
+                                    # ContactsPage, ConversationsPage, AssetsPage,
+                                    # RemindersPage, SettingsPage, LoginPage
 ```
 
 ## Key API Endpoints
@@ -116,6 +118,7 @@ kin-keeper/
 | GET/POST/PUT/DELETE | `/api/reminders[/{id}]` | Yes | Reminder CRUD |
 | POST | `/api/reminders/{id}/complete` | Yes | Mark complete (rolls recurrence forward) |
 | GET | `/api/reminders/count` | Yes | Badge count of open reminders due within 7 days |
+| GET/POST/PUT/DELETE | `/api/conversations[/{id}]` | Yes | Interaction ledger (ENCOUNTER or THREAD); GET supports `?query=`, `?linkType=`, `?linkId=`, `?fromDate=`, `?toDate=` filters |
 
 ## Firestore Collections
 
@@ -136,14 +139,20 @@ chat_sessions/{id}    → ChatSession (userId, title, expiresAt, pendingAttachme
   /messages/{id}      → ChatMessage (role, content, createdAt)
 reminders/{id}        → Reminder (familyId, title, dueAt, recurrence, dueOdometerKm,
                         recurrenceIntervalKm, linkedRefs: List<LinkRef>, completed)
+conversations/{id}    → Conversation (familyId, title, format: ENCOUNTER|THREAD,
+                        channel: CALL|VISIT|MESSAGE|EMAIL|MEETING|OTHER, occurredAt,
+                        summary, outcome, followUp, messages: List<ConversationMessage>,
+                        links: List<LinkRef>, createdBy, createdAt, updatedAt)
 ```
 
 ## Subject model
 
-Documents and reminders can link to any number of "subjects" via `LinkRef = {type, id}`
-where `type` is one of: `MEMBER`, `CONTACT`, `HOME`, `VEHICLE`, `APPLIANCE`, `POLICY`,
-`DOCUMENT`. A single document may link to several subjects at once — e.g. car insurance
-links both the policyholder `MEMBER` and the `VEHICLE` asset.
+Documents, reminders, and conversations can link to any number of "subjects" via
+`LinkRef = {type, id}` where `type` is one of: `MEMBER`, `CONTACT`, `HOME`, `VEHICLE`,
+`APPLIANCE`, `POLICY`, `DOCUMENT`, `CONVERSATION`. A single entity may link to several
+subjects at once — e.g. car insurance links both the policyholder `MEMBER` and the
+`VEHICLE` asset; a lawyer-call conversation links both the `CONTACT` lawyer and the
+`HOME` asset it's about.
 
 For backward compatibility `Document.memberId` stays as the "primary member link"; new
 uploads populate both `memberId` and an entry in `links[]`. Reads that filter by
@@ -162,7 +171,22 @@ type are populated:
 
 Reminders support date-based recurrence (`NONE`/`DAILY`/`WEEKLY`/`MONTHLY`/`QUARTERLY`/
 `HALF_YEARLY`/`YEARLY`) and an `ODOMETER` type for vehicle servicing (uses
-`dueOdometerKm` + `recurrenceIntervalKm` against a linked `VEHICLE`).
+`dueOdometerKm` + `recurrenceIntervalKm` against a linked `VEHICLE`). Every reminder
+must be anchored to at least one asset (`HOME`/`VEHICLE`/`APPLIANCE`/`POLICY`) **or** a
+`CONVERSATION` — floating reminders tied only to members/contacts/documents are
+rejected by the service.
+
+Conversations are a ledger of real-world interactions — calls, visits, meetings, email
+threads. Two formats:
+  - **ENCOUNTER**: single-entry recap with `summary`, `outcome`, `followUp`. Good for
+    "called Dr K, continue meds two more weeks, follow up Oct 3".
+  - **THREAD**: verbatim list of `messages` (each `{from, content, at}`). Good for
+    negotiations you want to replay later.
+
+Conversations carry `links` like any other subject-aware entity — a conversation can
+link to multiple subjects (a lawyer contact AND a home asset AND a specific document)
+simultaneously. When an ENCOUNTER carries a `followUp`, the UI and chat agent both
+offer to spawn a reminder anchored on that conversation.
 
 ## Auth Flow
 

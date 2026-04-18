@@ -5,6 +5,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import CategoriesPage from './pages/CategoriesPage'
 import MembersPage from './pages/MembersPage'
 import ContactsPage from './pages/ContactsPage'
+import ConversationsPage from './pages/ConversationsPage'
 import AssetsPage from './pages/AssetsPage'
 import RemindersPage from './pages/RemindersPage'
 import SettingsPage from './pages/SettingsPage'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="contacts" element={<ContactsPage />} />
+          <Route path="conversations" element={<ConversationsPage />} />
           <Route path="assets" element={<AssetsPage />} />
           <Route path="reminders" element={<RemindersPage />} />
           <Route path="settings" element={<SettingsPage />} />

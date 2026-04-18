@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { UserPlus, Trash2, Phone, Mail } from 'lucide-react'
+import { UserPlus, Trash2, Phone, Mail, MessageCircle } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -116,11 +117,18 @@ export default function ContactsPage() {
                 </div>
                 {c.notes && <p className="mt-1 text-xs text-muted-foreground">{c.notes}</p>}
               </div>
-              {isAdmin && (
-                <Button variant="ghost" size="icon" onClick={() => handleDelete(c)} title="Delete">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              )}
+              <div className="flex gap-1 shrink-0">
+                <Link to={`/conversations?linkType=CONTACT&linkId=${c.id}`} title="View conversations">
+                  <Button variant="ghost" size="icon" asChild={false}>
+                    <MessageCircle className="w-4 h-4" />
+                  </Button>
+                </Link>
+                {isAdmin && (
+                  <Button variant="ghost" size="icon" onClick={() => handleDelete(c)} title="Delete">
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                )}
+              </div>
             </li>
           ))}
         </ul>

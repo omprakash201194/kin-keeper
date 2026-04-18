@@ -7,5 +7,6 @@ public enum LinkType {
     VEHICLE,
     APPLIANCE,
     POLICY,
-    DOCUMENT
+    DOCUMENT,
+    CONVERSATION
 }

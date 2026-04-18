@@ -24,14 +24,19 @@ import com.ogautam.kinkeeper.model.Document;
 import com.ogautam.kinkeeper.model.Family;
 import com.ogautam.kinkeeper.model.Reminder;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
+import com.ogautam.kinkeeper.model.Conversation;
+import com.ogautam.kinkeeper.model.LinkType;
 import com.ogautam.kinkeeper.service.AssetService;
 import com.ogautam.kinkeeper.service.CategoryService;
 import com.ogautam.kinkeeper.service.ChatSessionService;
 import com.ogautam.kinkeeper.service.ContactService;
+import com.ogautam.kinkeeper.service.ConversationService;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.FamilyService;
 import com.ogautam.kinkeeper.service.ReminderService;
 import com.ogautam.kinkeeper.service.UserService;
+
+import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -59,18 +64,28 @@ public class KinKeeperAgent {
             insurance policy links the policyholder MEMBER AND the VEHICLE asset).
 
             Available tools (call list_* before acting — never fabricate IDs):
-              Documents    — search_documents, get_document, recategorize_document,
-                             save_attachment (pass `links` to tie to multiple subjects)
-              Members      — list_members, add_member
-              Contacts     — list_contacts, create_contact
-              Categories   — list_categories, create_category (optional parentId to nest)
-              Assets       — list_assets (optional type filter), create_asset
-                             (set type to HOME/VEHICLE/APPLIANCE/POLICY, only fill the
-                             fields that apply to that type — name is always required)
-              Reminders    — list_reminders, create_reminder, complete_reminder
-                             (recurrence: NONE / DAILY / WEEKLY / MONTHLY / QUARTERLY
-                             / HALF_YEARLY / YEARLY / ODOMETER; for ODOMETER supply
-                             dueOdometerKm and recurrenceIntervalKm and link a VEHICLE)
+              Documents      — search_documents, get_document, recategorize_document,
+                               save_attachment (pass `links` to tie to multiple subjects)
+              Members        — list_members, add_member
+              Contacts       — list_contacts, create_contact
+              Categories     — list_categories, create_category (optional parentId to nest)
+              Assets         — list_assets (optional type filter), create_asset
+                               (set type to HOME/VEHICLE/APPLIANCE/POLICY, only fill the
+                               fields that apply to that type — name is always required)
+              Reminders      — list_reminders, create_reminder, complete_reminder. Every
+                               reminder must be anchored to at least one asset
+                               (HOME/VEHICLE/APPLIANCE/POLICY) or a CONVERSATION. For
+                               ODOMETER reminders supply dueOdometerKm and
+                               recurrenceIntervalKm and link a VEHICLE.
+              Conversations  — log_conversation, search_conversations. Use
+                               format=ENCOUNTER for a single recap (summary/outcome/
+                               followUp). Use format=THREAD for a verbatim back-and-forth
+                               (supply `messages` list). Always set `links` — can combine
+                               CONTACT + MEMBER + asset types in one go (e.g. a lawyer
+                               call about a home links both the lawyer CONTACT and the
+                               HOME asset). If the user mentions a follow-up date/action,
+                               AFTER logging offer to create a reminder anchored on that
+                               conversation (pass linkedRefs=[{type:CONVERSATION,id}]).
 
             When the user attaches an image, inspect it, infer what it is, and pick
             the right combination of MEMBER / CONTACT / ASSET. Call create_* as needed
@@ -93,6 +108,7 @@ public class KinKeeperAgent {
     private final ContactService contactService;
     private final AssetService assetService;
     private final ReminderService reminderService;
+    private final ConversationService conversationService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -109,6 +125,7 @@ public class KinKeeperAgent {
                           ContactService contactService,
                           AssetService assetService,
                           ReminderService reminderService,
+                          ConversationService conversationService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
@@ -119,6 +136,7 @@ public class KinKeeperAgent {
         this.contactService = contactService;
         this.assetService = assetService;
         this.reminderService = reminderService;
+        this.conversationService = conversationService;
         this.defaultModel = defaultModel;
     }
 
@@ -359,6 +377,32 @@ public class KinKeeperAgent {
                     if (family == null) throw new IllegalArgumentException("User has no family");
                     yield toJson(reminderService.complete(family.getId(), (String) input.get("id")));
                 }
+                case "log_conversation" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    Conversation form = objectMapper.convertValue(input, Conversation.class);
+                    yield toJson(conversationService.create(family.getId(), principal.uid(), form));
+                }
+                case "search_conversations" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) yield "[]";
+                    LinkType lt = null;
+                    Object rawLt = input.get("linkType");
+                    if (rawLt != null) {
+                        try { lt = LinkType.valueOf(String.valueOf(rawLt).toUpperCase()); }
+                        catch (IllegalArgumentException ignored) { /* invalid type: treat as no filter */ }
+                    }
+                    Instant from = parseInstantOrNull((String) input.get("fromDate"));
+                    Instant to = parseInstantOrNull((String) input.get("toDate"));
+                    yield toJson(conversationService.search(
+                            family.getId(),
+                            (String) input.get("query"),
+                            lt,
+                            (String) input.get("linkId"),
+                            from,
+                            to));
+                }
                 case "save_attachment" -> {
                     userService.requireAdmin(principal.uid());
                     var saved = saveAttachment(principal, input);
@@ -432,6 +476,12 @@ public class KinKeeperAgent {
         attachmentService.discard(attachmentId);
         log.info("Agent saved attachment {} as document {} ({})", attachmentId, saved.getId(), effectiveFileName);
         return saved;
+    }
+
+    private static Instant parseInstantOrNull(String iso) {
+        if (iso == null || iso.isBlank()) return null;
+        try { return Instant.parse(iso); }
+        catch (Exception e) { return null; }
     }
 
     private static Base64ImageSource.MediaType imageMediaTypeFor(String mimeType) {
@@ -572,6 +622,40 @@ public class KinKeeperAgent {
                         schema(Map.of(
                                 "id", Map.of("type", "string")
                         ), List.of("id"))),
+                tool("log_conversation",
+                        "Record an interaction. links[] is required — tie it to at least one subject "
+                                + "(contact/member/asset/document). Use ENCOUNTER for a single recap with summary/outcome/followUp. "
+                                + "Use THREAD when the user wants to capture actual exchanged messages — supply `messages` list "
+                                + "(each {from, content, at?}). After logging, if followUp mentions a date/action, offer to "
+                                + "create_reminder with linkedRefs=[{type:CONVERSATION,id:<new conversation id>}].",
+                        schema(Map.ofEntries(
+                                Map.entry("format", Map.of("type", "string", "description", "ENCOUNTER | THREAD")),
+                                Map.entry("channel", Map.of("type", "string", "description", "CALL | VISIT | MESSAGE | EMAIL | MEETING | OTHER")),
+                                Map.entry("occurredAt", Map.of("type", "string", "description", "ISO-8601; defaults to now")),
+                                Map.entry("title", Map.of("type", "string", "description", "short title; auto-derived if omitted")),
+                                Map.entry("summary", Map.of("type", "string", "description", "ENCOUNTER: recap of what was discussed")),
+                                Map.entry("outcome", Map.of("type", "string", "description", "ENCOUNTER: decision/result")),
+                                Map.entry("followUp", Map.of("type", "string", "description", "action-to-take-next sentence; triggers reminder offer")),
+                                Map.entry("messages", Map.of("type", "array",
+                                        "items", Map.of("type", "object", "properties",
+                                                Map.of("from", Map.of("type", "string"),
+                                                        "content", Map.of("type", "string"),
+                                                        "at", Map.of("type", "string"))),
+                                        "description", "THREAD: list of {from, content, at} turns")),
+                                Map.entry("links", Map.of("type", "array",
+                                        "items", Map.of("type", "object", "properties",
+                                                Map.of("type", Map.of("type", "string"), "id", Map.of("type", "string"))),
+                                        "description", "REQUIRED. Subject links: MEMBER/CONTACT/HOME/VEHICLE/APPLIANCE/POLICY/DOCUMENT"))
+                        ), List.of("format", "links"))),
+                tool("search_conversations",
+                        "Find logged conversations. All filters optional — no filter returns the full family timeline.",
+                        schema(Map.of(
+                                "query", Map.of("type", "string", "description", "substring across title/summary/outcome/followUp/messages"),
+                                "linkType", Map.of("type", "string", "description", "restrict to conversations linked to this subject type"),
+                                "linkId", Map.of("type", "string", "description", "restrict to a specific subject id (requires linkType)"),
+                                "fromDate", Map.of("type", "string", "description", "ISO-8601 inclusive lower bound on occurredAt"),
+                                "toDate", Map.of("type", "string", "description", "ISO-8601 inclusive upper bound on occurredAt")
+                        ), List.of())),
                 tool("save_attachment",
                         "Save a staged file attachment to the family vault. Only usable when the user has attached a file to the current message; the attachmentId is shown in the attachment tag of the user's message. Uploads the file to Drive and indexes it in Firestore with the provided member, category, and labels.",
                         schema(Map.of(
