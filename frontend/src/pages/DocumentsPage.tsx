@@ -1,11 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Upload, FileText, Download, Trash2 } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
+import {
+  Category as TreeCategory,
+  flattenCategoryTree,
+  categoryLabelWithAncestors,
+} from '@/lib/categoryTree'
 
 type Member = { id: string; name: string; relationship?: string }
-type Category = { id: string; name: string }
+type Category = TreeCategory
 type DocumentRow = {
   id: string
   fileName: string
@@ -128,11 +133,13 @@ export default function DocumentsPage() {
     }
   }
 
+  const categoryTree = useMemo(() => flattenCategoryTree(categories), [categories])
+
   function memberName(id: string) {
     return members.find((m) => m.id === id)?.name ?? '—'
   }
   function categoryName(id: string) {
-    return categories.find((c) => c.id === id)?.name ?? '—'
+    return categoryLabelWithAncestors(categories, id) || '—'
   }
   function formatSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`
@@ -194,8 +201,10 @@ export default function DocumentsPage() {
               required
             >
               <option value="">Select category…</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>{c.name}</option>
+              {categoryTree.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {'\u00A0\u00A0'.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.name}
+                </option>
               ))}
             </select>
           </div>
@@ -229,8 +238,10 @@ export default function DocumentsPage() {
           className="rounded-md border px-3 py-2 text-sm"
         >
           <option value="">All categories</option>
-          {categories.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
+          {categoryTree.map((c) => (
+            <option key={c.id} value={c.id}>
+              {'\u00A0\u00A0'.repeat(c.depth) + (c.depth > 0 ? '└ ' : '') + c.name}
+            </option>
           ))}
         </select>
       </div>

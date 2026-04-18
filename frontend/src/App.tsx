@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import ChatPage from './pages/ChatPage'
 import DocumentsPage from './pages/DocumentsPage'
+import CategoriesPage from './pages/CategoriesPage'
 import MembersPage from './pages/MembersPage'
 import SettingsPage from './pages/SettingsPage'
 import Layout from './components/Layout'
@@ -23,6 +24,7 @@ export default function App() {
           <Route index element={<Navigate to="/chat" replace />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="documents" element={<DocumentsPage />} />
+          <Route path="categories" element={<CategoriesPage />} />
           <Route path="members" element={<MembersPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>

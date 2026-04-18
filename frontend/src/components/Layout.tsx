@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth'
 import {
   MessageSquare,
   FileText,
+  FolderTree,
   Users,
   Settings,
   LogOut,
@@ -14,10 +15,11 @@ import { clsx } from 'clsx'
 import { useState } from 'react'
 
 const nav = [
-  { to: '/chat',      label: 'Chat',      icon: MessageSquare },
-  { to: '/documents', label: 'Documents', icon: FileText },
-  { to: '/members',   label: 'Members',   icon: Users },
-  { to: '/settings',  label: 'Settings',  icon: Settings },
+  { to: '/chat',       label: 'Chat',       icon: MessageSquare },
+  { to: '/documents',  label: 'Documents',  icon: FileText },
+  { to: '/categories', label: 'Categories', icon: FolderTree },
+  { to: '/members',    label: 'Members',    icon: Users },
+  { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
 
 export default function Layout() {
