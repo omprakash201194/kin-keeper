@@ -57,11 +57,15 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              memory: "256Mi"
-              cpu: "100m"
+              memory: "384Mi"
+              cpu: "200m"
             limits:
-              memory: "512Mi"
-              cpu: "500m"
+              # reason: Spring Boot + Firestore + Firebase JWT verify is CPU-bursty on
+              # every request. A 500m cap caused ~40% CFS throttling on each API call,
+              # stacking into multi-second waits. 2 cores lets bursts finish quickly;
+              # the pod sits at ~10m steady state so the higher cap isn't a real cost.
+              memory: "768Mi"
+              cpu: "2000m"
       volumes:
         - name: firebase-credentials
           secret:
