@@ -22,6 +22,8 @@ type Reminder = {
 type Member = { id: string; name: string }
 type Contact = { id: string; name: string }
 type Asset = { id: string; type: LinkType; name: string; odometerKm?: number }
+type DocumentRow = { id: string; fileName: string }
+type ConversationRow = { id: string; title: string; occurredAt?: string; channel?: string }
 
 type AssetLinkType = 'HOME' | 'VEHICLE' | 'APPLIANCE' | 'POLICY'
 
@@ -42,6 +44,8 @@ export default function RemindersPage() {
   const [members, setMembers] = useState<Member[]>([])
   const [contacts, setContacts] = useState<Contact[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
+  const [documents, setDocuments] = useState<DocumentRow[]>([])
+  const [convos, setConvos] = useState<ConversationRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -55,16 +59,20 @@ export default function RemindersPage() {
     setLoading(true)
     setError(null)
     try {
-      const [r, m, c, a] = await Promise.all([
+      const [r, m, c, a, d, cv] = await Promise.all([
         apiClient.get<Reminder[]>('/reminders'),
         apiClient.get<Member[]>('/family/members'),
         apiClient.get<Contact[]>('/contacts'),
         apiClient.get<Asset[]>('/assets'),
+        apiClient.get<DocumentRow[]>('/documents'),
+        apiClient.get<ConversationRow[]>('/conversations'),
       ])
       setReminders(r.data)
       setMembers(m.data)
       setContacts(c.data)
       setAssets(a.data)
+      setDocuments(d.data)
+      setConvos(cv.data)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load reminders')
     } finally { setLoading(false) }
@@ -127,8 +135,18 @@ export default function RemindersPage() {
     for (const m of members) map.set(`MEMBER:${m.id}`, m.name)
     for (const c of contacts) map.set(`CONTACT:${c.id}`, c.name)
     for (const a of assets) map.set(`${a.type}:${a.id}`, a.name)
+    for (const d of documents) map.set(`DOCUMENT:${d.id}`, d.fileName)
+    for (const c of convos) map.set(`CONVERSATION:${c.id}`, c.title || 'Conversation')
     return map
-  }, [members, contacts, assets])
+  }, [members, contacts, assets, documents, convos])
+
+  function linkLabel(ref: LinkRef): string {
+    const name = linkLookup.get(`${ref.type}:${ref.id}`)
+    if (name) return `${ref.type.toLowerCase()}: ${name}`
+    // Fall back to a short id suffix instead of the full random string.
+    const short = ref.id.length > 6 ? ref.id.slice(0, 6) + '…' : ref.id
+    return `${ref.type.toLowerCase()}: ${short}`
+  }
 
   const sortedReminders = useMemo(() => {
     const arr = [...reminders]
@@ -259,7 +277,7 @@ export default function RemindersPage() {
                     <div className="mt-1 flex flex-wrap gap-1">
                       {r.linkedRefs.map((ref, i) => (
                         <span key={i} className="text-[11px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-                          {ref.type.toLowerCase()}: {linkLookup.get(`${ref.type}:${ref.id}`) ?? ref.id}
+                          {linkLabel(ref)}
                         </span>
                       ))}
                     </div>
