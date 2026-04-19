@@ -4,6 +4,7 @@ import { Upload, FileText, Download, Trash2, Camera, FileUp } from 'lucide-react
 import { useRef } from 'react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
+import DocumentThumbnail from '@/components/DocumentThumbnail'
 import {
   Category as TreeCategory,
   flattenCategoryTree,
@@ -382,7 +383,7 @@ export default function DocumentsPage() {
     return (
       <li key={doc.id} className="px-4 py-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <FileText className="w-5 h-5 text-muted-foreground shrink-0" />
+          <DocumentThumbnail documentId={doc.id} mimeType={doc.mimeType} size="md" />
           <div className="min-w-0">
             <p className="font-medium truncate">{doc.fileName}</p>
             <p className="text-xs text-muted-foreground">{meta.join(' · ')}</p>
