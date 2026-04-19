@@ -8,6 +8,7 @@ import ContactsPage from './pages/ContactsPage'
 import ConversationsPage from './pages/ConversationsPage'
 import AssetsPage from './pages/AssetsPage'
 import RemindersPage from './pages/RemindersPage'
+import NutritionPage from './pages/NutritionPage'
 import SettingsPage from './pages/SettingsPage'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="conversations" element={<ConversationsPage />} />
           <Route path="assets" element={<AssetsPage />} />
           <Route path="reminders" element={<RemindersPage />} />
+          <Route path="nutrition" element={<NutritionPage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

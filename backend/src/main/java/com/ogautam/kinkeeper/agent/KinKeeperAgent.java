@@ -36,8 +36,11 @@ import com.ogautam.kinkeeper.service.ContactService;
 import com.ogautam.kinkeeper.service.ConversationService;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.FamilyService;
+import com.ogautam.kinkeeper.service.NutritionService;
 import com.ogautam.kinkeeper.service.ReminderService;
 import com.ogautam.kinkeeper.service.UserService;
+import com.ogautam.kinkeeper.model.NutritionEntry;
+import com.ogautam.kinkeeper.model.NutritionFacts;
 
 import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
@@ -84,6 +87,13 @@ public class KinKeeperAgent {
                                (HOME/VEHICLE/APPLIANCE/POLICY) or a CONVERSATION. For
                                ODOMETER reminders supply dueOdometerKm and
                                recurrenceIntervalKm and link a VEHICLE.
+              Nutrition      — list_nutrition, nutrition_summary. Entries are
+                               created by the Nutrition page's camera scanner, not
+                               by you. Use list_nutrition when the user asks what
+                               they ate ("what did I have yesterday?"). Use
+                               nutrition_summary for totals/trends ("how much sugar
+                               this week?") — it returns aggregated calories, sugar,
+                               protein, carbs, fat over the window.
               Conversations  — log_conversation, search_conversations. Use
                                format=ENCOUNTER for a single recap (summary/outcome/
                                followUp). Use format=THREAD for a verbatim back-and-forth
@@ -116,6 +126,7 @@ public class KinKeeperAgent {
     private final AssetService assetService;
     private final ReminderService reminderService;
     private final ConversationService conversationService;
+    private final NutritionService nutritionService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -133,6 +144,7 @@ public class KinKeeperAgent {
                           AssetService assetService,
                           ReminderService reminderService,
                           ConversationService conversationService,
+                          NutritionService nutritionService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
@@ -144,6 +156,7 @@ public class KinKeeperAgent {
         this.assetService = assetService;
         this.reminderService = reminderService;
         this.conversationService = conversationService;
+        this.nutritionService = nutritionService;
         this.defaultModel = defaultModel;
     }
 
@@ -422,6 +435,29 @@ public class KinKeeperAgent {
                             from,
                             to));
                 }
+                case "list_nutrition" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) yield "[]";
+                    Instant from = parseInstantOrNull((String) input.get("fromDate"));
+                    Instant to = parseInstantOrNull((String) input.get("toDate"));
+                    yield toJson(nutritionService.search(
+                            family.getId(), (String) input.get("memberId"), from, to));
+                }
+                case "nutrition_summary" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) yield "{}";
+                    Instant from = parseInstantOrNull((String) input.get("fromDate"));
+                    Instant to = parseInstantOrNull((String) input.get("toDate"));
+                    if (from == null && to == null) {
+                        Object rawDays = input.get("days");
+                        int days = rawDays instanceof Number n ? n.intValue() : 7;
+                        to = Instant.now();
+                        from = to.minusSeconds(days * 86400L);
+                    }
+                    List<NutritionEntry> entries = nutritionService.search(
+                            family.getId(), (String) input.get("memberId"), from, to);
+                    yield toJson(summarize(entries, from, to));
+                }
                 case "save_attachment" -> {
                     userService.requireAdmin(principal.uid());
                     var saved = saveAttachment(principal, input);
@@ -531,6 +567,34 @@ public class KinKeeperAgent {
         attachmentService.discard(attachmentId);
         log.info("Agent saved attachment {} as document {} ({})", attachmentId, saved.getId(), effectiveFileName);
         return saved;
+    }
+
+    private static Map<String, Object> summarize(List<NutritionEntry> entries, Instant from, Instant to) {
+        double cal = 0, protein = 0, carbs = 0, sugar = 0, fat = 0, fiber = 0, sodium = 0;
+        for (NutritionEntry e : entries) {
+            NutritionFacts f = e.getFacts();
+            if (f == null) continue;
+            cal     += f.getCalories()      != null ? f.getCalories()      : 0;
+            protein += f.getProteinG()      != null ? f.getProteinG()      : 0;
+            carbs   += f.getCarbsG()        != null ? f.getCarbsG()        : 0;
+            sugar   += f.getSugarG()        != null ? f.getSugarG()        : 0;
+            fat     += f.getFatG()          != null ? f.getFatG()          : 0;
+            fiber   += f.getFiberG()        != null ? f.getFiberG()        : 0;
+            sodium  += f.getSodiumMg()      != null ? f.getSodiumMg()      : 0;
+        }
+        Map<String, Object> out = new HashMap<>();
+        out.put("entryCount", entries.size());
+        out.put("windowFrom", from != null ? from.toString() : null);
+        out.put("windowTo", to != null ? to.toString() : null);
+        out.put("totals", Map.of(
+                "calories", cal,
+                "proteinG", protein,
+                "carbsG", carbs,
+                "sugarG", sugar,
+                "fatG", fat,
+                "fiberG", fiber,
+                "sodiumMg", sodium));
+        return out;
     }
 
     private static Instant parseInstantOrNull(String iso) {
@@ -718,6 +782,24 @@ public class KinKeeperAgent {
                                 "linkId", Map.of("type", "string", "description", "restrict to a specific subject id (requires linkType)"),
                                 "fromDate", Map.of("type", "string", "description", "ISO-8601 inclusive lower bound on occurredAt"),
                                 "toDate", Map.of("type", "string", "description", "ISO-8601 inclusive upper bound on occurredAt")
+                        ), List.of())),
+                tool("list_nutrition",
+                        "List logged food/drink entries. Filters optional — memberId restricts to one person, " +
+                                "fromDate/toDate bound consumedAt.",
+                        schema(Map.of(
+                                "memberId", Map.of("type", "string"),
+                                "fromDate", Map.of("type", "string", "description", "ISO-8601 inclusive lower bound"),
+                                "toDate",   Map.of("type", "string", "description", "ISO-8601 inclusive upper bound")
+                        ), List.of())),
+                tool("nutrition_summary",
+                        "Aggregate totals (calories, protein, carbs, sugar, fat, fiber, sodium) across nutrition entries. " +
+                                "Use `days` for a rolling window (default 7) ending now, OR pass fromDate/toDate for an " +
+                                "explicit range. Optionally scope to one memberId.",
+                        schema(Map.of(
+                                "memberId", Map.of("type", "string"),
+                                "days",     Map.of("type", "integer", "description", "rolling window length in days, default 7"),
+                                "fromDate", Map.of("type", "string"),
+                                "toDate",   Map.of("type", "string")
                         ), List.of())),
                 tool("save_attachment",
                         "Save a staged file attachment to the family vault. Only usable when the user has attached a file to the current message; the attachmentId is shown in the attachment tag of the user's message. Uploads the file to Drive and indexes it in Firestore with the provided member, category, and labels.",

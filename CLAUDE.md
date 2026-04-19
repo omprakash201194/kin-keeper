@@ -86,7 +86,8 @@ kin-keeper/
 │       │                           #        LinkType), Invite, ChatSession, ChatMessage,
 │       │                           #        Reminder (+ReminderRecurrence),
 │       │                           #        Conversation (+ConversationFormat, Channel,
-│       │                           #        ConversationMessage)
+│       │                           #        ConversationMessage),
+│       │                           #        NutritionEntry (+NutritionSource, NutritionFacts)
 │       └── exception/              # Global error handler
 └── frontend/                       # React PWA
     └── src/
@@ -96,7 +97,7 @@ kin-keeper/
         ├── components/             # Layout, ProtectedRoute, shadcn ui/
         └── pages/                  # ChatPage, DocumentsPage, CategoriesPage, MembersPage,
                                     # ContactsPage, ConversationsPage, AssetsPage,
-                                    # RemindersPage, SettingsPage, LoginPage
+                                    # RemindersPage, NutritionPage, SettingsPage, LoginPage
 ```
 
 ## Key API Endpoints
@@ -119,6 +120,8 @@ kin-keeper/
 | POST | `/api/reminders/{id}/complete` | Yes | Mark complete (rolls recurrence forward) |
 | GET | `/api/reminders/count` | Yes | Badge count of open reminders due within 7 days |
 | GET/POST/PUT/DELETE | `/api/conversations[/{id}]` | Yes | Interaction ledger (ENCOUNTER or THREAD); GET supports `?query=`, `?linkType=`, `?linkId=`, `?fromDate=`, `?toDate=` filters |
+| GET/POST/DELETE | `/api/nutrition[/{id}]` | Yes | Nutrition entries CRUD; GET supports `?memberId=`, `?fromDate=`, `?toDate=` |
+| POST | `/api/nutrition/analyze` | Yes | Multipart `file` — returns a draft NutritionEntry from Claude vision (not persisted) |
 
 ## Firestore Collections
 
@@ -143,6 +146,11 @@ conversations/{id}    → Conversation (familyId, title, format: ENCOUNTER|THREA
                         channel: CALL|VISIT|MESSAGE|EMAIL|MEETING|OTHER, occurredAt,
                         summary, outcome, followUp, messages: List<ConversationMessage>,
                         links: List<LinkRef>, createdBy, createdAt, updatedAt)
+nutrition/{id}        → NutritionEntry (familyId, memberId, consumedAt, foodName,
+                        description, source: PACKAGED|RAW|COOKED|DRINK|OTHER,
+                        facts: NutritionFacts (servingDescription + calories/protein/
+                        carbs/sugar/fat/saturatedFat/fiber/sodium), ingredients,
+                        healthBenefits, warnings, createdBy, createdAt)
 ```
 
 ## Subject model

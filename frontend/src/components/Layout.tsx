@@ -9,6 +9,7 @@ import {
   Users,
   UserCircle2,
   Boxes,
+  Apple,
   Bell,
   Settings,
   LogOut,
@@ -28,6 +29,7 @@ const nav = [
   { to: '/conversations', label: 'Conversations', icon: MessageCircle },
   { to: '/assets',        label: 'Assets',        icon: Boxes },
   { to: '/reminders',     label: 'Reminders',     icon: Bell, badgeKey: 'reminders' as const },
+  { to: '/nutrition',     label: 'Nutrition',     icon: Apple },
   { to: '/settings',      label: 'Settings',      icon: Settings },
 ]
 
