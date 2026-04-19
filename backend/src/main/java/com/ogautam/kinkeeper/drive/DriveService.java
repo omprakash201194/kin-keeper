@@ -19,6 +19,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.security.GeneralSecurityException;
 import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @Slf4j
@@ -59,19 +60,78 @@ public class DriveService {
 
     public String uploadFile(String adminUid, String fileName, String mimeType, InputStream content)
             throws IOException, GeneralSecurityException, ExecutionException, InterruptedException {
+        return uploadFile(adminUid, fileName, mimeType, content, null);
+    }
+
+    /**
+     * Upload into a nested folder under the Kin-Keeper root. Each segment is created
+     * on demand and reused afterwards, so the Drive tree ends up as e.g.
+     *   Kin-Keeper/Omprakash Gautam/Education/file.pdf
+     * instead of dumping every document into one flat folder.
+     */
+    public String uploadFile(String adminUid, String fileName, String mimeType, InputStream content,
+                             List<String> pathSegments)
+            throws IOException, GeneralSecurityException, ExecutionException, InterruptedException {
         Drive drive = driveFor(adminUid);
-        String rootFolderId = getOrCreateRootFolder(adminUid);
+        String parentId = ensureFolderPath(adminUid, pathSegments);
 
         File metadata = new File()
                 .setName(fileName)
-                .setParents(Collections.singletonList(rootFolderId));
+                .setParents(Collections.singletonList(parentId));
         InputStreamContent mediaContent = new InputStreamContent(mimeType, content);
 
         File uploaded = drive.files().create(metadata, mediaContent)
                 .setFields("id, name, size, mimeType")
                 .execute();
-        log.info("Uploaded '{}' ({}) to Drive file {}", fileName, mimeType, uploaded.getId());
+        log.info("Uploaded '{}' ({}) to Drive file {} under folder {}", fileName, mimeType, uploaded.getId(), parentId);
         return uploaded.getId();
+    }
+
+    public String ensureFolderPath(String adminUid, List<String> pathSegments)
+            throws IOException, GeneralSecurityException, ExecutionException, InterruptedException {
+        String currentParent = getOrCreateRootFolder(adminUid);
+        if (pathSegments == null) return currentParent;
+        Drive drive = driveFor(adminUid);
+        for (String raw : pathSegments) {
+            String name = sanitizeFolderName(raw);
+            if (name == null) continue;
+            currentParent = findOrCreateChildFolder(drive, currentParent, name);
+        }
+        return currentParent;
+    }
+
+    private String findOrCreateChildFolder(Drive drive, String parentId, String name) throws IOException {
+        String escapedName = name.replace("\\", "\\\\").replace("'", "\\'");
+        String query = String.format(
+                "'%s' in parents and name = '%s' and mimeType = '%s' and trashed = false",
+                parentId, escapedName, FOLDER_MIME);
+        FileList result = drive.files().list()
+                .setQ(query)
+                .setSpaces("drive")
+                .setFields("files(id, name)")
+                .execute();
+        if (result.getFiles() != null && !result.getFiles().isEmpty()) {
+            return result.getFiles().get(0).getId();
+        }
+        File metadata = new File()
+                .setName(name)
+                .setMimeType(FOLDER_MIME)
+                .setParents(Collections.singletonList(parentId));
+        File created = drive.files().create(metadata).setFields("id").execute();
+        log.info("Created Drive subfolder '{}' ({}) under parent {}", name, created.getId(), parentId);
+        return created.getId();
+    }
+
+    private static String sanitizeFolderName(String raw) {
+        if (raw == null) return null;
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) return null;
+        // reason: Drive allows nearly anything, but path-like chars in a name look weird
+        // in the Drive UI and make manual navigation confusing. Normalise whitespace and
+        // strip slashes/backslashes.
+        String cleaned = trimmed.replaceAll("[/\\\\]", "-").replaceAll("\\s+", " ");
+        // Cap length defensively — Drive allows 32KB but 120 is readable.
+        return cleaned.length() > 120 ? cleaned.substring(0, 120) : cleaned;
     }
 
     public byte[] downloadFile(String adminUid, String driveFileId)

@@ -4,8 +4,10 @@ import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.JsonValue;
 import com.anthropic.models.messages.Base64ImageSource;
+import com.anthropic.models.messages.Base64PdfSource;
 import com.anthropic.models.messages.ContentBlock;
 import com.anthropic.models.messages.ContentBlockParam;
+import com.anthropic.models.messages.DocumentBlockParam;
 import com.anthropic.models.messages.ImageBlockParam;
 import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
@@ -13,6 +15,7 @@ import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolResultBlockParam;
+import com.anthropic.models.messages.ToolResultBlockParam.Content;
 import com.anthropic.models.messages.ToolUseBlock;
 import com.anthropic.models.messages.ToolUseBlockParam;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -64,8 +67,12 @@ public class KinKeeperAgent {
             insurance policy links the policyholder MEMBER AND the VEHICLE asset).
 
             Available tools (call list_* before acting — never fabricate IDs):
-              Documents      — search_documents, get_document, recategorize_document,
-                               save_attachment (pass `links` to tie to multiple subjects)
+              Documents      — search_documents, get_document, read_document,
+                               recategorize_document, save_attachment (pass `links`
+                               to tie to multiple subjects). Use read_document when
+                               the user asks a question about a specific document's
+                               CONTENTS (e.g. "what's the due date on this policy?")
+                               — it inlines the PDF/image so you can read it.
               Members        — list_members, add_member
               Contacts       — list_contacts, create_contact
               Categories     — list_categories, create_category (optional parentId to nest)
@@ -239,12 +246,21 @@ public class KinKeeperAgent {
                                     .name(tu.name())
                                     .input(tu._input())
                                     .build()));
-                    String result = runTool(principal, tu, sessionId);
-                    toolResults.add(ContentBlockParam.ofToolResult(
-                            ToolResultBlockParam.builder()
-                                    .toolUseId(tu.id())
-                                    .content(result)
-                                    .build()));
+                    ToolResult result = runTool(principal, tu, sessionId);
+                    ToolResultBlockParam.Builder trb = ToolResultBlockParam.builder()
+                            .toolUseId(tu.id());
+                    if (result.blocks().isEmpty()) {
+                        trb.content(result.text());
+                    } else {
+                        List<Content.Block> blocks = new ArrayList<>();
+                        if (result.text() != null && !result.text().isBlank()) {
+                            blocks.add(Content.Block.ofText(
+                                    TextBlockParam.builder().text(result.text()).build()));
+                        }
+                        blocks.addAll(result.blocks());
+                        trb.contentOfBlocks(blocks);
+                    }
+                    toolResults.add(ContentBlockParam.ofToolResult(trb.build()));
                 }
             }
 
@@ -278,10 +294,13 @@ public class KinKeeperAgent {
         return sb.toString();
     }
 
-    private String runTool(FirebaseUserPrincipal principal, ToolUseBlock tu, String sessionId) {
+    private ToolResult runTool(FirebaseUserPrincipal principal, ToolUseBlock tu, String sessionId) {
         try {
             Map<String, Object> input = parseInput(tu._input());
             log.info("Tool call: {} input={}", tu.name(), input);
+            if ("read_document".equals(tu.name())) {
+                return readDocument(principal, input);
+            }
             String result = switch (tu.name()) {
                 case "search_documents" -> toJson(documentService.searchDocuments(
                         principal,
@@ -416,11 +435,46 @@ public class KinKeeperAgent {
             };
             String preview = result.length() > 400 ? result.substring(0, 400) + "…(truncated)" : result;
             log.info("Tool result: {} bytes={} preview={}", tu.name(), result.length(), preview);
-            return result;
+            return ToolResult.ofText(result);
         } catch (Exception e) {
             log.warn("Tool {} failed: {}", tu.name(), e.getMessage());
-            return "{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}";
+            return ToolResult.ofText("{\"error\":\"" + e.getMessage().replace("\"", "'") + "\"}");
         }
+    }
+
+    private ToolResult readDocument(FirebaseUserPrincipal principal, Map<String, Object> input) throws Exception {
+        String id = (String) input.get("id");
+        if (id == null || id.isBlank()) {
+            return ToolResult.ofText("{\"error\":\"id is required\"}");
+        }
+        Document doc = documentService.getDocument(principal, id);
+        String mime = doc.getMimeType() != null ? doc.getMimeType().toLowerCase() : "";
+        String header = "Document metadata: " + toJson(doc);
+        if ("application/pdf".equals(mime)) {
+            byte[] bytes = documentService.downloadDocument(principal, id);
+            String base64 = Base64.getEncoder().encodeToString(bytes);
+            DocumentBlockParam pdf = DocumentBlockParam.builder()
+                    .base64Source(base64)
+                    .title(doc.getFileName() != null ? doc.getFileName() : id)
+                    .build();
+            log.info("read_document: inlined PDF {} ({} bytes)", id, bytes.length);
+            return new ToolResult(header, List.of(Content.Block.ofDocument(pdf)));
+        }
+        Base64ImageSource.MediaType imgMediaType = imageMediaTypeFor(mime);
+        if (imgMediaType != null) {
+            byte[] bytes = documentService.downloadDocument(principal, id);
+            String base64 = Base64.getEncoder().encodeToString(bytes);
+            ImageBlockParam img = ImageBlockParam.builder()
+                    .source(Base64ImageSource.builder()
+                            .data(base64)
+                            .mediaType(imgMediaType)
+                            .build())
+                    .build();
+            log.info("read_document: inlined image {} ({} bytes, {})", id, bytes.length, mime);
+            return new ToolResult(header, List.of(Content.Block.ofImage(img)));
+        }
+        return ToolResult.ofText(header + "\nContent cannot be inlined for mimeType=" + mime
+                + ". Only PDFs and common images are readable inline.");
     }
 
     private Document saveAttachment(FirebaseUserPrincipal principal, Map<String, Object> input) throws Exception {
@@ -538,6 +592,14 @@ public class KinKeeperAgent {
                         "Fetch full metadata for a single document by its id.",
                         schema(Map.of(
                                 "id", Map.of("type", "string", "description", "the document id")
+                        ), List.of("id"))),
+                tool("read_document",
+                        "Inline the actual contents of a document so you can answer questions about it. "
+                                + "Works for PDFs and common image types (jpg/png/gif/webp). "
+                                + "For other mime types the tool returns metadata only. Use this when the user "
+                                + "asks anything about what IS INSIDE a document (dates, amounts, names, clauses).",
+                        schema(Map.of(
+                                "id", Map.of("type", "string", "description", "the document id to read")
                         ), List.of("id"))),
                 tool("recategorize_document",
                         "Move a document to a different category.",
@@ -698,4 +760,8 @@ public class KinKeeperAgent {
 
     public record ChatTurn(String role, String text) {}
     public record ChatReply(String text) {}
+
+    private record ToolResult(String text, List<Content.Block> blocks) {
+        static ToolResult ofText(String text) { return new ToolResult(text, List.of()); }
+    }
 }

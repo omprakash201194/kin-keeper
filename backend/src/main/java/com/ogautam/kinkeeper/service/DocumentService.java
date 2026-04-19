@@ -6,8 +6,10 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Query;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import com.ogautam.kinkeeper.drive.DriveService;
+import com.ogautam.kinkeeper.model.Category;
 import com.ogautam.kinkeeper.model.Document;
 import com.ogautam.kinkeeper.model.Family;
+import com.ogautam.kinkeeper.model.FamilyMember;
 import com.ogautam.kinkeeper.model.LinkRef;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
 import lombok.extern.slf4j.Slf4j;
@@ -30,11 +32,14 @@ public class DocumentService {
     private final Firestore firestore;
     private final DriveService driveService;
     private final FamilyService familyService;
+    private final CategoryService categoryService;
 
-    public DocumentService(Firestore firestore, DriveService driveService, FamilyService familyService) {
+    public DocumentService(Firestore firestore, DriveService driveService,
+                           FamilyService familyService, CategoryService categoryService) {
         this.firestore = firestore;
         this.driveService = driveService;
         this.familyService = familyService;
+        this.categoryService = categoryService;
     }
 
     public Document uploadDocument(FirebaseUserPrincipal principal,
@@ -49,7 +54,9 @@ public class DocumentService {
                                    List<LinkRef> links)
             throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
         Family family = requireFamily(principal);
-        String driveFileId = driveService.uploadFile(family.getAdminUid(), fileName, mimeType, content);
+        List<String> pathSegments = folderPathFor(family.getId(), memberId, categoryId);
+        String driveFileId = driveService.uploadFile(
+                family.getAdminUid(), fileName, mimeType, content, pathSegments);
 
         DocumentReference ref = firestore.collection(DOCUMENTS_COLLECTION).document();
         Document doc = Document.builder()
@@ -204,6 +211,41 @@ public class DocumentService {
             throw new IllegalArgumentException("Document not found");
         }
         return doc;
+    }
+
+    /**
+     * Builds the Drive folder path for a new upload so files land in
+     *   Kin-Keeper/{memberName or _Shared}/{categoryName or _Uncategorized}/file
+     * instead of a single flat folder. Bulletproofed against missing lookups so
+     * upload never fails just because a member was deleted mid-flow.
+     */
+    private List<String> folderPathFor(String familyId, String memberId, String categoryId)
+            throws ExecutionException, InterruptedException {
+        String memberName = null;
+        if (memberId != null && !memberId.isBlank()) {
+            try {
+                var snap = firestore.collection("members").document(memberId).get().get();
+                if (snap.exists()) {
+                    FamilyMember m = snap.toObject(FamilyMember.class);
+                    if (m != null && familyId.equals(m.getFamilyId())) {
+                        memberName = m.getName();
+                    }
+                }
+            } catch (Exception ignored) { /* fall through */ }
+        }
+        String categoryName = null;
+        if (categoryId != null && !categoryId.isBlank()) {
+            for (Category c : categoryService.listByFamily(familyId)) {
+                if (categoryId.equals(c.getId())) {
+                    categoryName = c.getName();
+                    break;
+                }
+            }
+        }
+        List<String> segments = new ArrayList<>(2);
+        segments.add(memberName != null ? memberName : "_Shared");
+        segments.add(categoryName != null ? categoryName : "_Uncategorized");
+        return segments;
     }
 
     private Family requireFamily(FirebaseUserPrincipal principal)
