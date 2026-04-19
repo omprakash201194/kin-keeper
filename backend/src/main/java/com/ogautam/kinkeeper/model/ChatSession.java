@@ -20,4 +20,10 @@ public class ChatSession {
     private Instant updatedAt;
     private Instant expiresAt;
     private String pendingAttachmentId;
+    /**
+     * Set by save_attachment while the agent loop is running; read + cleared by
+     * ChatController after agent.chat() returns so we can patch the triggering
+     * user message with the resulting Drive document id.
+     */
+    private String recentlySavedDocumentId;
 }

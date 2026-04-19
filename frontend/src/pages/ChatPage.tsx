@@ -15,11 +15,75 @@ type Message = {
   id: string
   role: 'user' | 'assistant'
   content: string
+  attachmentFileName?: string
+  attachmentMimeType?: string
+  attachmentDocumentId?: string
 }
 
 type SessionWithMessages = {
   session: ChatSession
-  messages: Array<{ id: string; role: string; content: string }>
+  messages: Array<{
+    id: string
+    role: string
+    content: string
+    attachmentFileName?: string
+    attachmentMimeType?: string
+    attachmentDocumentId?: string
+  }>
+}
+
+/**
+ * Renders an image preview when the attached file was saved to Drive
+ * (attachmentDocumentId is set) and is an image mime. Otherwise shows a small
+ * file pill with the filename — lets the user see something happened without
+ * having to jump to the Documents page.
+ */
+function MessageAttachment({ fileName, mimeType, documentId }: {
+  fileName: string
+  mimeType?: string
+  documentId?: string
+}) {
+  const [src, setSrc] = useState<string | null>(null)
+  const isImage = (mimeType ?? '').startsWith('image/')
+
+  useEffect(() => {
+    if (!isImage || !documentId) {
+      setSrc(null)
+      return
+    }
+    let cancelled = false
+    let objectUrl: string | null = null
+    ;(async () => {
+      try {
+        const res = await apiClient.get(`/documents/${documentId}/download`, { responseType: 'blob' })
+        if (cancelled) return
+        objectUrl = URL.createObjectURL(res.data as Blob)
+        setSrc(objectUrl)
+      } catch {
+        /* ignore; fall back to pill */
+      }
+    })()
+    return () => {
+      cancelled = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [documentId, isImage])
+
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={fileName}
+        className="mb-2 rounded-md max-h-60 max-w-full object-contain bg-black/5"
+      />
+    )
+  }
+  return (
+    <div className="mb-2 inline-flex items-center gap-2 text-[11px] bg-black/10 text-primary-foreground/90 rounded px-2 py-1">
+      <Paperclip className="w-3 h-3" />
+      <span className="truncate max-w-[200px]">{fileName}</span>
+    </div>
+  )
 }
 
 export default function ChatPage() {
@@ -74,6 +138,9 @@ export default function ChatPage() {
         id: m.id,
         role: m.role as 'user' | 'assistant',
         content: m.content,
+        attachmentFileName: m.attachmentFileName,
+        attachmentMimeType: m.attachmentMimeType,
+        attachmentDocumentId: m.attachmentDocumentId,
       })))
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load chat')
@@ -131,7 +198,13 @@ export default function ChatPage() {
     const displayText = pending
       ? (text ? `${text}\n\n[attached: ${pending.name}]` : `[attached: ${pending.name}]`)
       : text
-    const userMsg: Message = { id: `u-${Date.now()}`, role: 'user', content: displayText }
+    const userMsg: Message = {
+      id: `u-${Date.now()}`,
+      role: 'user',
+      content: displayText,
+      attachmentFileName: pending?.name,
+      attachmentMimeType: pending?.type,
+    }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
     setAttachment(null)
@@ -157,6 +230,10 @@ export default function ChatPage() {
         ...prev,
         { id: res.data.messageId, role: 'assistant', content: res.data.reply },
       ])
+      // Refresh so the user message picks up attachmentDocumentId (if the agent
+      // saved the attachment) and the optimistic local message is replaced with
+      // the server-authoritative copy.
+      if (pending && sessionId) void loadMessages(sessionId)
       void loadSessions(false)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Chat failed. Have you added your Claude API key in Settings?')
@@ -164,6 +241,18 @@ export default function ChatPage() {
       setSending(false)
     }
   }
+
+  // Compose-time preview: turn the File into an object URL and clean up on change.
+  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
+  useEffect(() => {
+    if (!attachment || !attachment.type.startsWith('image/')) {
+      setAttachmentPreviewUrl(null)
+      return
+    }
+    const url = URL.createObjectURL(attachment)
+    setAttachmentPreviewUrl(url)
+    return () => URL.revokeObjectURL(url)
+  }, [attachment])
 
   function formatDate(iso?: string) {
     if (!iso) return ''
@@ -289,6 +378,13 @@ export default function ChatPage() {
                       : 'bg-muted text-foreground'
                   }`}
                 >
+                  {msg.role === 'user' && msg.attachmentFileName && (
+                    <MessageAttachment
+                      fileName={msg.attachmentFileName}
+                      mimeType={msg.attachmentMimeType}
+                      documentId={msg.attachmentDocumentId}
+                    />
+                  )}
                   {msg.role === 'assistant' ? (
                     <ReactMarkdown
                       components={{
@@ -334,14 +430,31 @@ export default function ChatPage() {
 
         <div className="border-t p-4 space-y-2">
           {attachment && (
-            <div className="flex items-center justify-between bg-muted px-3 py-1.5 rounded-md text-xs">
-              <span className="truncate">📎 {attachment.name} ({Math.round(attachment.size/1024)} KB)</span>
+            <div className="flex items-center gap-3 bg-muted px-3 py-2 rounded-md text-xs">
+              {attachmentPreviewUrl ? (
+                <img
+                  src={attachmentPreviewUrl}
+                  alt={attachment.name}
+                  className="w-12 h-12 rounded object-cover shrink-0"
+                />
+              ) : (
+                <div className="w-12 h-12 rounded bg-background border flex items-center justify-center shrink-0">
+                  <Paperclip className="w-4 h-4 text-muted-foreground" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="truncate font-medium">{attachment.name}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {Math.round(attachment.size / 1024)} KB
+                  {attachment.type ? ` · ${attachment.type}` : ''}
+                </p>
+              </div>
               <button
                 onClick={() => setAttachment(null)}
-                className="text-muted-foreground hover:text-red-600 ml-2"
+                className="text-muted-foreground hover:text-red-600"
                 title="Remove attachment"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             </div>
           )}

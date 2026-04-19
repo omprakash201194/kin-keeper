@@ -86,12 +86,35 @@ public class ChatController {
         }
 
         String userContent = body.message() == null ? "" : body.message();
-        String renderedUser = body.attachmentId() != null && !body.attachmentId().isBlank()
-                ? (userContent.isBlank() ? "[attached file]" : userContent + "\n\n[attached file]")
+
+        // Capture filename + mime from the staged attachment so the UI can show it
+        // in history even before (or without) the agent saving it.
+        String attachmentFileName = null;
+        String attachmentMimeType = null;
+        if (effectiveAttachmentId != null && !effectiveAttachmentId.isBlank()) {
+            try {
+                AttachmentService.Loaded att = attachments.load(effectiveAttachmentId, principal.uid());
+                attachmentFileName = att.fileName();
+                attachmentMimeType = att.mimeType();
+            } catch (Exception ignored) {
+                // Attachment already expired from Redis — keep going without metadata.
+            }
+        }
+        String renderedUser = attachmentFileName != null
+                ? (userContent.isBlank() ? "[attached: " + attachmentFileName + "]"
+                        : userContent + "\n\n[attached: " + attachmentFileName + "]")
                 : userContent;
-        sessions.appendMessage(principal, id, "user", renderedUser);
+        ChatMessage userMsg = sessions.appendMessage(principal, id, "user",
+                renderedUser, attachmentFileName, attachmentMimeType);
 
         ChatReply reply = agent.chat(principal, turns, userContent, effectiveAttachmentId, id);
+
+        // If the agent's save_attachment ran, patch the user message with the Drive doc id.
+        String savedDocId = sessions.consumeRecentlySavedDocument(id);
+        if (savedDocId != null && userMsg.getAttachmentFileName() != null) {
+            sessions.setMessageDocumentId(id, userMsg.getId(), savedDocId);
+        }
+
         ChatMessage assistant = sessions.appendMessage(principal, id, "assistant", reply.text());
         return ResponseEntity.ok(Map.of("reply", reply.text(), "messageId", assistant.getId()));
     }

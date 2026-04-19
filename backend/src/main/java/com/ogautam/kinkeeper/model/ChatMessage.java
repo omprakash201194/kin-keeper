@@ -17,4 +17,11 @@ public class ChatMessage {
     private String role;
     private String content;
     private Instant createdAt;
+
+    // Populated only on user messages that carried an attachment.
+    private String attachmentFileName;
+    private String attachmentMimeType;
+    // Filled in after-the-fact if the agent's save_attachment tool persisted the file
+    // to Drive. Lets the UI render an inline preview of the saved document.
+    private String attachmentDocumentId;
 }

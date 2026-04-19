@@ -118,6 +118,13 @@ public class ChatSessionService {
     public ChatMessage appendMessage(FirebaseUserPrincipal principal, String sessionId,
                                      String role, String content)
             throws ExecutionException, InterruptedException {
+        return appendMessage(principal, sessionId, role, content, null, null);
+    }
+
+    public ChatMessage appendMessage(FirebaseUserPrincipal principal, String sessionId,
+                                     String role, String content,
+                                     String attachmentFileName, String attachmentMimeType)
+            throws ExecutionException, InterruptedException {
         ChatSession session = get(principal, sessionId);
         Instant now = Instant.now();
         DocumentReference ref = messages(sessionId).document();
@@ -127,6 +134,8 @@ public class ChatSessionService {
                 .role(role)
                 .content(content)
                 .createdAt(now)
+                .attachmentFileName(attachmentFileName)
+                .attachmentMimeType(attachmentMimeType)
                 .build();
         ref.set(msg).get();
 
@@ -160,6 +169,32 @@ public class ChatSessionService {
         // Skips the ownership check because the agent has already authorized via principal.
         firestore.collection(SESSIONS_COLLECTION).document(sessionId)
                 .update("pendingAttachmentId", null).get();
+    }
+
+    /** Called by the agent's save_attachment tool when a Drive upload succeeds. */
+    public void markRecentlySavedDocument(String sessionId, String documentId)
+            throws ExecutionException, InterruptedException {
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
+                .update("recentlySavedDocumentId", documentId).get();
+    }
+
+    /** Called by ChatController after agent.chat() — returns the id and resets the field. */
+    public String consumeRecentlySavedDocument(String sessionId)
+            throws ExecutionException, InterruptedException {
+        DocumentSnapshot snap = firestore.collection(SESSIONS_COLLECTION).document(sessionId).get().get();
+        if (!snap.exists()) return null;
+        Object val = snap.get("recentlySavedDocumentId");
+        if (val == null) return null;
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
+                .update("recentlySavedDocumentId", null).get();
+        return val.toString();
+    }
+
+    /** Back-fill an attachmentDocumentId onto an existing message (used after save_attachment). */
+    public void setMessageDocumentId(String sessionId, String messageId, String documentId)
+            throws ExecutionException, InterruptedException {
+        messages(sessionId).document(messageId)
+                .update("attachmentDocumentId", documentId).get();
     }
 
     private void deleteCascade(String sessionId) throws ExecutionException, InterruptedException {

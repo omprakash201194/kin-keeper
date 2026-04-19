@@ -408,6 +408,7 @@ public class KinKeeperAgent {
                     var saved = saveAttachment(principal, input);
                     if (sessionId != null) {
                         chatSessionService.clearPendingAttachment(sessionId);
+                        chatSessionService.markRecentlySavedDocument(sessionId, saved.getId());
                     }
                     yield toJson(saved);
                 }
