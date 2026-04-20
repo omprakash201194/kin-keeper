@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
+import HomePage from './pages/HomePage'
 import ChatPage from './pages/ChatPage'
 import DocumentsPage from './pages/DocumentsPage'
 import CategoriesPage from './pages/CategoriesPage'
@@ -27,7 +28,7 @@ export default function App() {
             </ProtectedRoute>
           }
         >
-          <Route index element={<Navigate to="/chat" replace />} />
+          <Route index element={<HomePage />} />
           <Route path="chat" element={<ChatPage />} />
           <Route path="documents" element={<DocumentsPage />} />
           <Route path="categories" element={<CategoriesPage />} />

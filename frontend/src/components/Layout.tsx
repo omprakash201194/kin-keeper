@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import { useReminderCount } from '@/hooks/useReminderCount'
 import {
+  Home,
   MessageSquare,
   MessageCircle,
   FileText,
@@ -22,6 +23,7 @@ import { clsx } from 'clsx'
 import { useState } from 'react'
 
 const nav = [
+  { to: '/',              label: 'Home',          icon: Home,          end: true as const },
   { to: '/chat',          label: 'Chat',          icon: MessageSquare },
   { to: '/documents',     label: 'Documents',     icon: FileText },
   { to: '/categories',    label: 'Categories',    icon: FolderTree },
@@ -63,6 +65,7 @@ export default function Layout() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={'end' in item ? item.end : false}
               onClick={() => setSidebarOpen(false)}
               className={({ isActive }) =>
                 clsx(
