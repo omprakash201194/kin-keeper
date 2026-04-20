@@ -125,6 +125,8 @@ kin-keeper/
 | POST | `/api/reminders/{id}/complete` | Yes | Mark complete (rolls recurrence forward) |
 | GET | `/api/reminders/count` | Yes | Badge count of open reminders due within 7 days |
 | GET/POST/PUT/DELETE | `/api/conversations[/{id}]` | Yes | Interaction ledger (ENCOUNTER or THREAD); GET supports `?query=`, `?linkType=`, `?linkId=`, `?fromDate=`, `?toDate=` filters |
+| GET/POST/DELETE | `/api/bills[/{id}]` | Yes | Bill history per POLICY asset; GET supports `?assetId=` |
+| GET | `/api/bills/totals` | Yes | Current-month spend totals keyed by assetId |
 | GET/POST/DELETE | `/api/nutrition[/{id}]` | Yes | Nutrition entries CRUD; GET supports `?memberId=`, `?fromDate=`, `?toDate=` |
 | POST | `/api/nutrition/analyze` | Yes | Multipart `file` — returns a draft NutritionEntry from Claude vision (not persisted) |
 | GET/POST/PUT/DELETE | `/api/plans[/{id}]` | Yes | Plan CRUD (trips/events/celebrations) |
@@ -157,6 +159,11 @@ conversations/{id}    → Conversation (familyId, title, format: ENCOUNTER|THREA
                         channel: CALL|VISIT|MESSAGE|EMAIL|MEETING|OTHER, occurredAt,
                         summary, outcome, followUp, messages: List<ConversationMessage>,
                         links: List<LinkRef>, createdBy, createdAt, updatedAt)
+bills/{id}            → Bill (familyId, assetId (POLICY), dueAt, paidAt, amount,
+                        currency (default INR), source: MANUAL|SMS|EMAIL|CHAT,
+                        sourceText, notes, createdBy, createdAt). Creating a
+                        bill bumps the asset's expiryDate to the bill's dueAt
+                        when later, so 'next renewal' stays current.
 plans/{id}            → Plan (familyId, name, type: TRIP|EVENT|CELEBRATION|OTHER,
                         startDate, endDate, destination, notes,
                         segments: List<PlanSegment {kind, title, location,

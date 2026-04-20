@@ -36,11 +36,13 @@ import com.ogautam.kinkeeper.service.ContactService;
 import com.ogautam.kinkeeper.service.ConversationService;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.ApiUsageService;
+import com.ogautam.kinkeeper.service.BillService;
 import com.ogautam.kinkeeper.service.FamilyService;
 import com.ogautam.kinkeeper.service.NutritionService;
 import com.ogautam.kinkeeper.service.PlanService;
 import com.ogautam.kinkeeper.service.ReminderService;
 import com.ogautam.kinkeeper.service.UserService;
+import com.ogautam.kinkeeper.model.Bill;
 import com.ogautam.kinkeeper.model.NutritionEntry;
 import com.ogautam.kinkeeper.model.NutritionFacts;
 import com.ogautam.kinkeeper.model.Plan;
@@ -102,6 +104,10 @@ public class KinKeeperAgent {
                                trip/event or saves a ticket/reservation, offer to
                                tie it to a plan. A plan's links[] carries attendees
                                (MEMBER/CONTACT), attached docs, and related assets.
+              Bills          — list_bills, log_bill. Each bill records one
+                               payment against a POLICY asset. On a new SMS/
+                               recharge/renewal, log_bill so the asset gains
+                               a history entry and its expiryDate is bumped.
               Nutrition      — list_nutrition, nutrition_summary. Entries are
                                created by the Nutrition page's camera scanner, not
                                by you. Use list_nutrition when the user asks what
@@ -135,29 +141,40 @@ public class KinKeeperAgent {
             consumes it — reuse it without asking the user to re-attach.
 
             Bill / SMS ingestion
-              When the user pastes a message that looks like a bill, recharge,
-              subscription confirmation, renewal notice, or utility statement
-              (internet, electricity, gas, phone, credit card, OTT, rent, etc.):
+              When the user pastes or shares a message that looks like a bill,
+              recharge, subscription confirmation, renewal notice, or utility
+              statement (internet, electricity, gas, phone, credit card, OTT,
+              rent, etc.):
                 1. list_assets type=POLICY and pick an existing match by
-                   provider + account/identifier. Only create_asset if nothing fits.
+                   provider + account/identifier. Only create_asset if nothing
+                   fits — DO NOT create duplicate subscriptions if one already
+                   exists, even if the user shares the same kind of SMS again.
                 2. When creating, set type=POLICY and populate provider (ISP /
                    utility / bank), identifier (account / plan / customer #),
                    frequency (MONTHLY/QUARTERLY/YEARLY inferred from the cycle
                    or validity — e.g. "90 days" → QUARTERLY), amount (MRP /
                    bill amount), expiryDate (the next renewal/due date).
-                3. Always create_reminder linked to that asset with dueAt set
-                   to the renewal/due date and recurrence matching the
-                   billing cycle, so the nudge fires every cycle. The dueAt
-                   MUST be in the future — if the message references a
-                   historical or current date (e.g. "subscribed on Oct 14
-                   2025"), compute the NEXT upcoming cycle from today and
-                   use that. (The server also rolls past dates forward as a
-                   safety net, but do the math yourself so the user sees the
-                   right date in your reply.)
-                4. Ignore marketing fluff and one-time OTP / consent codes —
-                   those are not worth storing. Report the asset + reminder
-                   you created (or matched) in one short sentence so the user
-                   can correct in the UI if needed.
+                3. Call log_bill against the asset with the bill amount, dueAt
+                   set to the bill's due/renewal date (this can be historical —
+                   log_bill accepts past dates, that's the point of history),
+                   source=SMS (or EMAIL/CHAT as appropriate), and sourceText
+                   set to the raw message (trim OTP / consent codes first).
+                   The server updates the asset's expiryDate for you; don't
+                   call create_asset again just to bump the date.
+                4. If no future-dated reminder already exists for this asset,
+                   create_reminder linked to it with dueAt = the NEXT upcoming
+                   cycle from today (the server rolls past dates forward as a
+                   safety net). Otherwise, leave the existing reminder alone —
+                   don't spawn duplicates.
+                5. Ignore marketing fluff and one-time OTP / consent codes.
+                   Report the asset + bill (and reminder, if new) in one short
+                   sentence so the user can correct in the UI if needed.
+
+            Bill / spend questions
+              Use list_bills to answer "how much have I paid for X" / "has my
+              internet gone up" / "show me my streaming history" style questions.
+              Pass assetId when the user is asking about one subscription;
+              leave it blank to pull the full family timeline.
 
             Keep answers brief.
             """;
@@ -175,6 +192,7 @@ public class KinKeeperAgent {
     private final NutritionService nutritionService;
     private final PlanService planService;
     private final ApiUsageService apiUsageService;
+    private final BillService billService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -195,6 +213,7 @@ public class KinKeeperAgent {
                           NutritionService nutritionService,
                           PlanService planService,
                           ApiUsageService apiUsageService,
+                          BillService billService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
@@ -209,6 +228,7 @@ public class KinKeeperAgent {
         this.nutritionService = nutritionService;
         this.planService = planService;
         this.apiUsageService = apiUsageService;
+        this.billService = billService;
         this.defaultModel = defaultModel;
     }
 
@@ -514,6 +534,21 @@ public class KinKeeperAgent {
                     List<NutritionEntry> entries = nutritionService.search(
                             family.getId(), (String) input.get("memberId"), from, to);
                     yield toJson(summarize(entries, from, to));
+                }
+                case "list_bills" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) yield "[]";
+                    String assetId = (String) input.get("assetId");
+                    yield toJson(assetId == null || assetId.isBlank()
+                            ? billService.listByFamily(family.getId())
+                            : billService.listByAsset(family.getId(), assetId));
+                }
+                case "log_bill" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    Bill form = objectMapper.convertValue(input, Bill.class);
+                    yield toJson(billService.create(family.getId(), principal.uid(), form));
                 }
                 case "list_plans" -> {
                     Family family = familyService.getFamilyForUser(principal.uid());
@@ -904,6 +939,29 @@ public class KinKeeperAgent {
                                 "fromDate", Map.of("type", "string"),
                                 "toDate",   Map.of("type", "string")
                         ), List.of())),
+                tool("list_bills",
+                        "List logged bills / recharges / subscription payments. Pass assetId to scope to " +
+                                "one subscription (for 'how much have I paid for X' questions); omit for the full " +
+                                "family timeline.",
+                        schema(Map.of(
+                                "assetId", Map.of("type", "string", "description", "optional — a POLICY asset id")
+                        ), List.of())),
+                tool("log_bill",
+                        "Append a bill to an existing POLICY asset. Use this every time the user shares a new " +
+                                "bill/recharge/renewal SMS or mentions paying a subscription. Do NOT call this for " +
+                                "non-POLICY assets (homes/vehicles/appliances) — the server will reject it. " +
+                                "The server bumps the asset's expiryDate to this bill's dueAt when it's later " +
+                                "than the current value, so you don't need to also update the asset.",
+                        schema(Map.ofEntries(
+                                Map.entry("assetId",    Map.of("type", "string", "description", "POLICY asset id")),
+                                Map.entry("dueAt",      Map.of("type", "string", "description", "ISO-8601 — when the bill was/is due")),
+                                Map.entry("paidAt",     Map.of("type", "string", "description", "ISO-8601 — optional, if already paid")),
+                                Map.entry("amount",     Map.of("type", "number", "description", "bill amount in the user's currency")),
+                                Map.entry("currency",   Map.of("type", "string", "description", "ISO currency code; defaults to INR")),
+                                Map.entry("source",     Map.of("type", "string", "description", "MANUAL | SMS | EMAIL | CHAT")),
+                                Map.entry("sourceText", Map.of("type", "string", "description", "raw SMS/email for reference; trim OTPs")),
+                                Map.entry("notes",      Map.of("type", "string"))
+                        ), List.of("assetId", "dueAt"))),
                 tool("list_plans",
                         "List trips, events, and celebrations the family is organizing. Returns id, name, type, dates, destination, and segments.",
                         schema(Map.of(), List.of())),

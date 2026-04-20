@@ -33,6 +33,7 @@ public class CacheConfig {
     public static final String CACHE_CONVERSATIONS = "conversations";
     public static final String CACHE_NUTRITION = "nutrition";
     public static final String CACHE_PLANS = "plans";
+    public static final String CACHE_BILLS = "bills";
 
     @Bean
     public RedisCacheManager cacheManager(RedisConnectionFactory connectionFactory) {
@@ -70,7 +71,8 @@ public class CacheConfig {
                 Map.entry(CACHE_REMINDERS, base.entryTtl(Duration.ofSeconds(30))),
                 Map.entry(CACHE_CONVERSATIONS, base.entryTtl(Duration.ofSeconds(60))),
                 Map.entry(CACHE_NUTRITION, base.entryTtl(Duration.ofSeconds(60))),
-                Map.entry(CACHE_PLANS, base.entryTtl(Duration.ofMinutes(2))));
+                Map.entry(CACHE_PLANS, base.entryTtl(Duration.ofMinutes(2))),
+                Map.entry(CACHE_BILLS, base.entryTtl(Duration.ofMinutes(2))));
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(base)

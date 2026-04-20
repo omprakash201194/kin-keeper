@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Home, Car, Cpu, Shield, Pencil } from 'lucide-react'
+import { Plus, Trash2, Home, Car, Cpu, Shield, Pencil, Receipt, ChevronDown, ChevronRight } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -53,9 +53,22 @@ const EMPTY_FORM = {
   notes: '',
 }
 
+type Bill = {
+  id: string
+  assetId: string
+  dueAt?: string
+  paidAt?: string
+  amount?: number
+  currency?: string
+  source?: 'MANUAL' | 'SMS' | 'EMAIL' | 'CHAT'
+  notes?: string
+}
+
 export default function AssetsPage() {
   const { isAdmin } = useProfile()
   const [assets, setAssets] = useState<Asset[]>([])
+  const [bills, setBills] = useState<Bill[]>([])
+  const [openBillsFor, setOpenBillsFor] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -70,11 +83,52 @@ export default function AssetsPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiClient.get<Asset[]>('/assets')
-      setAssets(res.data)
+      const [assetsRes, billsRes] = await Promise.all([
+        apiClient.get<Asset[]>('/assets'),
+        apiClient.get<Bill[]>('/bills').catch(() => ({ data: [] as Bill[] })),
+      ])
+      setAssets(assetsRes.data)
+      setBills(billsRes.data)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load assets')
     } finally { setLoading(false) }
+  }
+
+  function toggleBills(assetId: string) {
+    setOpenBillsFor((prev) => {
+      const next = new Set(prev)
+      if (next.has(assetId)) next.delete(assetId)
+      else next.add(assetId)
+      return next
+    })
+  }
+
+  async function handleDeleteBill(id: string) {
+    if (!confirm('Delete this bill entry?')) return
+    try {
+      await apiClient.delete(`/bills/${id}`)
+      await load()
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Failed to delete bill')
+    }
+  }
+
+  function formatMoney(amount?: number, currency?: string): string {
+    if (amount == null) return '—'
+    const cur = currency || 'INR'
+    const symbol = cur === 'INR' ? '₹' : cur === 'USD' ? '$' : cur === 'EUR' ? '€' : ''
+    return symbol ? `${symbol}${amount.toLocaleString()}` : `${amount.toLocaleString()} ${cur}`
+  }
+
+  function formatDate(iso?: string): string {
+    if (!iso) return ''
+    return new Date(iso).toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' })
+  }
+
+  function billsFor(assetId: string): Bill[] {
+    return bills
+      .filter((b) => b.assetId === assetId)
+      .sort((a, b) => new Date(b.dueAt ?? 0).getTime() - new Date(a.dueAt ?? 0).getTime())
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -267,29 +321,98 @@ export default function AssetsPage() {
                 {TYPE_LABEL[t]} <span className="font-normal normal-case">({list.length})</span>
               </h2>
               <ul className="divide-y border rounded-md">
-                {list.map((a) => (
-                  <li key={a.id} className="px-4 py-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium">{a.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {[a.make, a.model, a.identifier, a.provider, a.address,
-                          a.odometerKm ? `${a.odometerKm} km` : null,
-                          a.frequency, a.expiryDate ? `exp ${a.expiryDate}` : null]
-                          .filter(Boolean).join(' · ')}
-                      </p>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex gap-1 shrink-0">
-                        <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
-                          <Pencil className="w-4 h-4" />
-                        </Button>
-                        <Button variant="ghost" size="icon" onClick={() => handleDelete(a)} title="Delete">
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                {list.map((a) => {
+                  const assetBills = t === 'POLICY' ? billsFor(a.id) : []
+                  const lastBill = assetBills[0]
+                  const total = assetBills.reduce((s, b) => s + (b.amount ?? 0), 0)
+                  const isOpen = openBillsFor.has(a.id)
+                  return (
+                    <li key={a.id}>
+                      <div className="px-4 py-3 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-medium">{a.name}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {[a.make, a.model, a.identifier, a.provider, a.address,
+                              a.odometerKm ? `${a.odometerKm} km` : null,
+                              a.frequency, a.expiryDate ? `next ${a.expiryDate}` : null]
+                              .filter(Boolean).join(' · ')}
+                          </p>
+                          {t === 'POLICY' && (
+                            <button
+                              type="button"
+                              onClick={() => toggleBills(a.id)}
+                              className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition"
+                            >
+                              {isOpen ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+                              <Receipt className="w-3 h-3" />
+                              {assetBills.length === 0
+                                ? 'No bills logged'
+                                : `${assetBills.length} bill${assetBills.length === 1 ? '' : 's'}` +
+                                  (lastBill
+                                    ? ` · last ${formatMoney(lastBill.amount, lastBill.currency)} on ${formatDate(lastBill.dueAt)}`
+                                    : '')}
+                            </button>
+                          )}
+                        </div>
+                        {isAdmin && (
+                          <div className="flex gap-1 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => handleDelete(a)} title="Delete">
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </li>
-                ))}
+                      {t === 'POLICY' && isOpen && (
+                        <div className="px-4 pb-3 pt-1">
+                          {assetBills.length === 0 ? (
+                            <p className="text-xs text-muted-foreground italic">
+                              No bills logged yet. Share an SMS or bill into the app to start the history.
+                            </p>
+                          ) : (
+                            <>
+                              <ul className="divide-y border rounded-md text-sm bg-background/40">
+                                {assetBills.map((b) => (
+                                  <li key={b.id} className="px-3 py-2 flex items-center gap-3">
+                                    <span className="text-xs text-muted-foreground w-28 shrink-0">
+                                      {formatDate(b.dueAt)}
+                                    </span>
+                                    <span className="font-medium flex-1">
+                                      {formatMoney(b.amount, b.currency)}
+                                    </span>
+                                    {b.source && (
+                                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                        {b.source}
+                                      </span>
+                                    )}
+                                    {isAdmin && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteBill(b.id)}
+                                        className="text-muted-foreground hover:text-red-400"
+                                        title="Delete bill entry"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Total across {assetBills.length} bill{assetBills.length === 1 ? '' : 's'}:{' '}
+                                <span className="font-medium text-foreground">
+                                  {formatMoney(total, lastBill?.currency)}
+                                </span>
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             </section>
           )
