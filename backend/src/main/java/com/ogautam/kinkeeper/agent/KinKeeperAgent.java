@@ -68,7 +68,9 @@ public class KinKeeperAgent {
             Subjects a document can belong to:
               - family MEMBER (Wife, Self, Dad, …)
               - external CONTACT (lawyer, doctor, landlord — not a family login)
-              - asset: HOME, VEHICLE, APPLIANCE, or POLICY
+              - asset: HOME, VEHICLE, APPLIANCE, or POLICY (POLICY covers both
+                insurance policies AND recurring services/subscriptions —
+                internet, electricity, gas, phone recharge, credit card, OTT, etc.)
             A single document may link to several subjects at once (e.g. a car
             insurance policy links the policyholder MEMBER AND the VEHICLE asset).
 
@@ -130,6 +132,25 @@ public class KinKeeperAgent {
 
             An attachmentId stays valid across follow-up turns until save_attachment
             consumes it — reuse it without asking the user to re-attach.
+
+            Bill / SMS ingestion
+              When the user pastes a message that looks like a bill, recharge,
+              subscription confirmation, renewal notice, or utility statement
+              (internet, electricity, gas, phone, credit card, OTT, rent, etc.):
+                1. list_assets type=POLICY and pick an existing match by
+                   provider + account/identifier. Only create_asset if nothing fits.
+                2. When creating, set type=POLICY and populate provider (ISP /
+                   utility / bank), identifier (account / plan / customer #),
+                   frequency (MONTHLY/QUARTERLY/YEARLY inferred from the cycle
+                   or validity — e.g. "90 days" → QUARTERLY), amount (MRP /
+                   bill amount), expiryDate (the next renewal/due date).
+                3. Always create_reminder linked to that asset with dueAt set
+                   to the renewal/due date and recurrence matching the
+                   billing cycle, so the nudge fires every cycle.
+                4. Ignore marketing fluff and one-time OTP / consent codes —
+                   those are not worth storing. Report the asset + reminder
+                   you created (or matched) in one short sentence so the user
+                   can correct in the UI if needed.
 
             Keep answers brief.
             """;
@@ -772,7 +793,10 @@ public class KinKeeperAgent {
                         "Register a new asset. Required: type (HOME/VEHICLE/APPLIANCE/POLICY) and name. " +
                                 "Fill only fields relevant to the type — VEHICLE wants make/model/identifier(reg)/odometerKm; " +
                                 "APPLIANCE wants make/model/identifier(serial)/expiryDate(warranty end); " +
-                                "HOME wants address; POLICY wants provider/identifier(policy number)/frequency/amount/expiryDate/linkedAssetIds.",
+                                "HOME wants address; POLICY covers insurance AND recurring subscriptions/services " +
+                                "(internet, electricity, gas, phone recharge, credit card, OTT) — wants provider, " +
+                                "identifier (policy/account/customer #), frequency (MONTHLY/QUARTERLY/YEARLY), amount, " +
+                                "expiryDate (policy end OR next renewal date), optional linkedAssetIds.",
                         schema(Map.ofEntries(
                                 Map.entry("type", Map.of("type", "string", "description", "HOME | VEHICLE | APPLIANCE | POLICY")),
                                 Map.entry("name", Map.of("type", "string", "description", "short identifying name, e.g. 'Mumbai house'")),

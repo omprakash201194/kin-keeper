@@ -27,7 +27,7 @@ const TYPE_LABEL: Record<AssetType, string> = {
   HOME: 'Homes',
   VEHICLE: 'Vehicles',
   APPLIANCE: 'Appliances',
-  POLICY: 'Policies',
+  POLICY: 'Policies & Subscriptions',
 }
 
 const TYPE_ICON: Record<AssetType, React.ComponentType<{ className?: string }>> = {
@@ -142,7 +142,7 @@ export default function AssetsPage() {
               <option value="HOME">Home</option>
               <option value="VEHICLE">Vehicle</option>
               <option value="APPLIANCE">Appliance</option>
-              <option value="POLICY">Policy</option>
+              <option value="POLICY">Policy / Subscription</option>
             </select>
             <input className="rounded-md border px-3 py-2 text-sm" placeholder="Name" required
                    value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -174,9 +174,9 @@ export default function AssetsPage() {
           {form.type === 'POLICY' && (
             <>
               <div className="grid grid-cols-2 gap-2">
-                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Provider (insurer/bank)"
+                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Provider (insurer / ISP / utility / bank)"
                        value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} />
-                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Policy #"
+                <input className="rounded-md border px-3 py-2 text-sm" placeholder="Policy / account / customer #"
                        value={form.identifier} onChange={(e) => setForm({ ...form, identifier: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-2">

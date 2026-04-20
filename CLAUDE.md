@@ -186,7 +186,15 @@ type are populated:
                     `expiryDate` (warranty end), `ownerMemberIds`, `notes`
   - **POLICY**:     `name`, `provider`, `identifier` (policy #), `purchaseDate` (start),
                     `expiryDate` (end), `frequency`, `amount` (premium),
-                    `ownerMemberIds` (insureds), `linkedAssetIds` (covered assets)
+                    `ownerMemberIds` (insureds), `linkedAssetIds` (covered assets).
+                    **POLICY is deliberately broad** — it covers insurance
+                    policies AND recurring subscriptions/services (internet, gas,
+                    electricity, phone recharge, credit card statements, OTT,
+                    rent). The UI labels it "Policies & Subscriptions" and the
+                    agent auto-files pasted bill/SMS messages under this type.
+                    `expiryDate` is used for both policy-end and next-renewal-
+                    due-date; reminders anchor on it with recurrence set to the
+                    billing cycle.
 
 Reminders support date-based recurrence (`NONE`/`DAILY`/`WEEKLY`/`MONTHLY`/`QUARTERLY`/
 `HALF_YEARLY`/`YEARLY`) and an `ODOMETER` type for vehicle servicing (uses
