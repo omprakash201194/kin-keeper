@@ -268,7 +268,7 @@ export default function RemindersPage() {
               <option value="HOME">Home</option>
               <option value="VEHICLE">Vehicle</option>
               <option value="APPLIANCE">Appliance</option>
-              <option value="POLICY">Policy</option>
+              <option value="POLICY">Policy / Subscription</option>
             </select>
             <select className="rounded-md border px-3 py-2 text-sm" required
                     value={form.linkId}

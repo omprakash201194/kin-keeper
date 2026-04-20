@@ -363,7 +363,7 @@ export default function ConversationsPage() {
           <option value="HOME">Home</option>
           <option value="VEHICLE">Vehicle</option>
           <option value="APPLIANCE">Appliance</option>
-          <option value="POLICY">Policy</option>
+          <option value="POLICY">Policy / Subscription</option>
           <option value="DOCUMENT">Document</option>
         </select>
         {filterType && (
