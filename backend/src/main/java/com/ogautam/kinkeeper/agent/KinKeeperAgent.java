@@ -37,10 +37,13 @@ import com.ogautam.kinkeeper.service.ConversationService;
 import com.ogautam.kinkeeper.service.DocumentService;
 import com.ogautam.kinkeeper.service.FamilyService;
 import com.ogautam.kinkeeper.service.NutritionService;
+import com.ogautam.kinkeeper.service.PlanService;
 import com.ogautam.kinkeeper.service.ReminderService;
 import com.ogautam.kinkeeper.service.UserService;
 import com.ogautam.kinkeeper.model.NutritionEntry;
 import com.ogautam.kinkeeper.model.NutritionFacts;
+import com.ogautam.kinkeeper.model.Plan;
+import com.ogautam.kinkeeper.model.PlanSegment;
 
 import java.time.Instant;
 import lombok.extern.slf4j.Slf4j;
@@ -87,6 +90,15 @@ public class KinKeeperAgent {
                                (HOME/VEHICLE/APPLIANCE/POLICY) or a CONVERSATION. For
                                ODOMETER reminders supply dueOdometerKm and
                                recurrenceIntervalKm and link a VEHICLE.
+              Plans          — list_plans, get_plan, create_plan, add_plan_segment,
+                               link_document_to_plan. Plans are time-bounded things
+                               the family is organizing — trips, concerts, weddings,
+                               conferences. Each plan carries an itinerary of
+                               segments (FLIGHT/HOTEL/ACTIVITY/CONCERT/MEAL/
+                               TRANSPORT/OTHER). When the user mentions an upcoming
+                               trip/event or saves a ticket/reservation, offer to
+                               tie it to a plan. A plan's links[] carries attendees
+                               (MEMBER/CONTACT), attached docs, and related assets.
               Nutrition      — list_nutrition, nutrition_summary. Entries are
                                created by the Nutrition page's camera scanner, not
                                by you. Use list_nutrition when the user asks what
@@ -133,6 +145,7 @@ public class KinKeeperAgent {
     private final ReminderService reminderService;
     private final ConversationService conversationService;
     private final NutritionService nutritionService;
+    private final PlanService planService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -151,6 +164,7 @@ public class KinKeeperAgent {
                           ReminderService reminderService,
                           ConversationService conversationService,
                           NutritionService nutritionService,
+                          PlanService planService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
@@ -163,6 +177,7 @@ public class KinKeeperAgent {
         this.reminderService = reminderService;
         this.conversationService = conversationService;
         this.nutritionService = nutritionService;
+        this.planService = planService;
         this.defaultModel = defaultModel;
     }
 
@@ -467,6 +482,46 @@ public class KinKeeperAgent {
                     List<NutritionEntry> entries = nutritionService.search(
                             family.getId(), (String) input.get("memberId"), from, to);
                     yield toJson(summarize(entries, from, to));
+                }
+                case "list_plans" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) yield "[]";
+                    yield toJson(planService.listByFamily(family.getId()));
+                }
+                case "get_plan" -> {
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    yield toJson(planService.get(family.getId(), (String) input.get("id")));
+                }
+                case "create_plan" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    Plan form = objectMapper.convertValue(input, Plan.class);
+                    yield toJson(planService.create(family.getId(), principal.uid(), form));
+                }
+                case "add_plan_segment" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    String planId = (String) input.get("planId");
+                    if (planId == null || planId.isBlank()) {
+                        throw new IllegalArgumentException("planId is required");
+                    }
+                    // The agent passes the segment under a `segment` key OR flat — accept both.
+                    Object rawSegment = input.getOrDefault("segment", input);
+                    PlanSegment seg = objectMapper.convertValue(rawSegment, PlanSegment.class);
+                    yield toJson(planService.addSegment(family.getId(), planId, seg));
+                }
+                case "link_document_to_plan" -> {
+                    userService.requireAdmin(principal.uid());
+                    Family family = familyService.getFamilyForUser(principal.uid());
+                    if (family == null) throw new IllegalArgumentException("User has no family");
+                    yield toJson(planService.linkDocument(
+                            family.getId(),
+                            (String) input.get("planId"),
+                            (String) input.get("documentId"),
+                            principal));
                 }
                 case "save_attachment" -> {
                     userService.requireAdmin(principal.uid());
@@ -814,6 +869,54 @@ public class KinKeeperAgent {
                                 "fromDate", Map.of("type", "string"),
                                 "toDate",   Map.of("type", "string")
                         ), List.of())),
+                tool("list_plans",
+                        "List trips, events, and celebrations the family is organizing. Returns id, name, type, dates, destination, and segments.",
+                        schema(Map.of(), List.of())),
+                tool("get_plan",
+                        "Fetch a single plan with its full segment list and linked docs.",
+                        schema(Map.of(
+                                "id", Map.of("type", "string")
+                        ), List.of("id"))),
+                tool("create_plan",
+                        "Create a new plan. type is one of TRIP | EVENT | CELEBRATION | OTHER. "
+                                + "startDate/endDate are ISO dates (YYYY-MM-DD). Use links[] to attach "
+                                + "attendees (MEMBER/CONTACT) and related subjects (DOCUMENT, HOME, VEHICLE). "
+                                + "Segments can be added now or via add_plan_segment later.",
+                        schema(Map.ofEntries(
+                                Map.entry("name",        Map.of("type", "string", "description", "short name, e.g. 'Goa Dec 2026'")),
+                                Map.entry("type",        Map.of("type", "string", "description", "TRIP | EVENT | CELEBRATION | OTHER")),
+                                Map.entry("startDate",   Map.of("type", "string", "description", "YYYY-MM-DD")),
+                                Map.entry("endDate",     Map.of("type", "string", "description", "YYYY-MM-DD")),
+                                Map.entry("destination", Map.of("type", "string")),
+                                Map.entry("notes",       Map.of("type", "string")),
+                                Map.entry("links",       Map.of("type", "array",
+                                        "items", Map.of("type", "object", "properties",
+                                                Map.of("type", Map.of("type", "string"), "id", Map.of("type", "string"))),
+                                        "description", "attendees + related subjects: MEMBER/CONTACT/DOCUMENT/HOME/VEHICLE/APPLIANCE/POLICY"))
+                        ), List.of("name"))),
+                tool("add_plan_segment",
+                        "Append one itinerary line to an existing plan. kind is one of "
+                                + "FLIGHT | HOTEL | ACTIVITY | CONCERT | MEAL | TRANSPORT | OTHER. Use "
+                                + "documentId to tie the segment to a specific ticket/booking document.",
+                        schema(Map.ofEntries(
+                                Map.entry("planId",       Map.of("type", "string")),
+                                Map.entry("kind",         Map.of("type", "string", "description", "FLIGHT | HOTEL | ACTIVITY | CONCERT | MEAL | TRANSPORT | OTHER")),
+                                Map.entry("title",        Map.of("type", "string")),
+                                Map.entry("location",     Map.of("type", "string")),
+                                Map.entry("confirmation", Map.of("type", "string", "description", "PNR / booking reference")),
+                                Map.entry("startAt",      Map.of("type", "string", "description", "ISO-8601")),
+                                Map.entry("endAt",        Map.of("type", "string", "description", "ISO-8601")),
+                                Map.entry("documentId",   Map.of("type", "string")),
+                                Map.entry("notes",        Map.of("type", "string"))
+                        ), List.of("planId", "kind", "title"))),
+                tool("link_document_to_plan",
+                        "Attach an existing document (ticket, booking PDF, itinerary) to a plan. "
+                                + "Updates both sides of the link — the plan gets a DOCUMENT reference, "
+                                + "the document gets a PLAN reference so filtering either way works.",
+                        schema(Map.of(
+                                "planId",     Map.of("type", "string"),
+                                "documentId", Map.of("type", "string")
+                        ), List.of("planId", "documentId"))),
                 tool("save_attachment",
                         "Save a staged file attachment to the family vault. Only usable when the user has attached a file to the current message; the attachmentId is shown in the attachment tag of the user's message. Uploads the file to Drive and indexes it in Firestore with the provided member, category, and labels.",
                         schema(Map.of(

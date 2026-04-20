@@ -8,5 +8,6 @@ public enum LinkType {
     APPLIANCE,
     POLICY,
     DOCUMENT,
-    CONVERSATION
+    CONVERSATION,
+    PLAN
 }

@@ -87,7 +87,8 @@ kin-keeper/
 │       │                           #        Reminder (+ReminderRecurrence),
 │       │                           #        Conversation (+ConversationFormat, Channel,
 │       │                           #        ConversationMessage),
-│       │                           #        NutritionEntry (+NutritionSource, NutritionFacts)
+│       │                           #        NutritionEntry (+NutritionSource, NutritionFacts),
+│       │                           #        Plan (+PlanType, PlanSegment, PlanSegmentKind)
 │       └── exception/              # Global error handler
 └── frontend/                       # React PWA
     └── src/
@@ -97,7 +98,8 @@ kin-keeper/
         ├── components/             # Layout, ProtectedRoute, shadcn ui/
         └── pages/                  # ChatPage, DocumentsPage, CategoriesPage, MembersPage,
                                     # ContactsPage, ConversationsPage, AssetsPage,
-                                    # RemindersPage, NutritionPage, SettingsPage, LoginPage
+                                    # RemindersPage, NutritionPage, PlansPage,
+                                    # SettingsPage, LoginPage
 ```
 
 ## Key API Endpoints
@@ -123,6 +125,9 @@ kin-keeper/
 | GET/POST/PUT/DELETE | `/api/conversations[/{id}]` | Yes | Interaction ledger (ENCOUNTER or THREAD); GET supports `?query=`, `?linkType=`, `?linkId=`, `?fromDate=`, `?toDate=` filters |
 | GET/POST/DELETE | `/api/nutrition[/{id}]` | Yes | Nutrition entries CRUD; GET supports `?memberId=`, `?fromDate=`, `?toDate=` |
 | POST | `/api/nutrition/analyze` | Yes | Multipart `file` — returns a draft NutritionEntry from Claude vision (not persisted) |
+| GET/POST/PUT/DELETE | `/api/plans[/{id}]` | Yes | Plan CRUD (trips/events/celebrations) |
+| POST | `/api/plans/{id}/segments` | Yes | Append an itinerary segment (FLIGHT/HOTEL/ACTIVITY/CONCERT/MEAL/TRANSPORT/OTHER) |
+| POST | `/api/plans/{id}/attach-document/{documentId}` | Yes | Two-way link an existing document to the plan |
 
 ## Firestore Collections
 
@@ -147,6 +152,11 @@ conversations/{id}    → Conversation (familyId, title, format: ENCOUNTER|THREA
                         channel: CALL|VISIT|MESSAGE|EMAIL|MEETING|OTHER, occurredAt,
                         summary, outcome, followUp, messages: List<ConversationMessage>,
                         links: List<LinkRef>, createdBy, createdAt, updatedAt)
+plans/{id}            → Plan (familyId, name, type: TRIP|EVENT|CELEBRATION|OTHER,
+                        startDate, endDate, destination, notes,
+                        segments: List<PlanSegment {kind, title, location,
+                        confirmation, startAt, endAt, documentId, notes}>,
+                        links: List<LinkRef>, createdBy, createdAt, updatedAt)
 nutrition/{id}        → NutritionEntry (familyId, memberId, consumedAt, foodName,
                         description, source: PACKAGED|RAW|COOKED|DRINK|OTHER,
                         facts: NutritionFacts (servingDescription + calories/protein/
@@ -158,7 +168,7 @@ nutrition/{id}        → NutritionEntry (familyId, memberId, consumedAt, foodNa
 
 Documents, reminders, and conversations can link to any number of "subjects" via
 `LinkRef = {type, id}` where `type` is one of: `MEMBER`, `CONTACT`, `HOME`, `VEHICLE`,
-`APPLIANCE`, `POLICY`, `DOCUMENT`, `CONVERSATION`. A single entity may link to several
+`APPLIANCE`, `POLICY`, `DOCUMENT`, `CONVERSATION`, `PLAN`. A single entity may link to several
 subjects at once — e.g. car insurance links both the policyholder `MEMBER` and the
 `VEHICLE` asset; a lawyer-call conversation links both the `CONTACT` lawyer and the
 `HOME` asset it's about.
@@ -184,6 +194,12 @@ Reminders support date-based recurrence (`NONE`/`DAILY`/`WEEKLY`/`MONTHLY`/`QUAR
 must be anchored to at least one asset (`HOME`/`VEHICLE`/`APPLIANCE`/`POLICY`) **or** a
 `CONVERSATION` — floating reminders tied only to members/contacts/documents are
 rejected by the service.
+
+Plans are time-bounded things the family is organizing — trips, concerts, weddings.
+Each plan carries an itinerary of `segments` (flight/hotel/activity/concert/meal/
+transport/other) and a polymorphic `links` list for attendees (MEMBER/CONTACT),
+attached documents (tickets, bookings), and related assets. Map view is deferred —
+see `ROADMAP.md`.
 
 Conversations are a ledger of real-world interactions — calls, visits, meetings, email
 threads. Two formats:
