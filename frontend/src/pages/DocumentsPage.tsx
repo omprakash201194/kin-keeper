@@ -112,7 +112,18 @@ export default function DocumentsPage() {
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (uploadFiles.length === 0 || !uploadMemberId || !uploadCategoryId) return
+    if (uploadFiles.length === 0) {
+      setError('Pick at least one file before uploading.')
+      return
+    }
+    if (!uploadMemberId) {
+      setError('Pick a member for these files. "Let AI sort them" if you want different members per file.')
+      return
+    }
+    if (!uploadCategoryId) {
+      setError('Pick a category for these files. "Let AI sort them" if you want different categories per file.')
+      return
+    }
 
     setUploading(true)
     setError(null)
@@ -387,7 +398,7 @@ export default function DocumentsPage() {
           <div className="flex flex-wrap gap-2 pt-1">
             <Button
               type="submit"
-              disabled={uploading || aiSorting || uploadFiles.length === 0 || !uploadMemberId || !uploadCategoryId}
+              disabled={uploading || aiSorting || uploadFiles.length === 0}
             >
               {uploading
                 ? 'Uploading…'
@@ -410,6 +421,7 @@ export default function DocumentsPage() {
             "Upload all to same category" needs member + category picked above. "Let AI sort them"
             ignores those and hands every file to Claude to classify individually.
           </p>
+          {error && <p className="text-sm text-red-300">{error}</p>}
         </form>
       )}
 
