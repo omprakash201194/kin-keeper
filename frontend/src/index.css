@@ -15,8 +15,9 @@
     --card: 20 12% 9%;
     --card-foreground: 30 25% 94%;
 
-    /* Emerald accent matches the sidebar-active state and the logo. */
-    --primary: 160 84% 42%;
+    /* Warm rose accent — picks up the aurora's pink glow. The shield logo keeps
+       its emerald tint as a subtle callback so the brand mark isn't all one hue. */
+    --primary: 340 75% 58%;
     --primary-foreground: 0 0% 100%;
 
     --secondary: 20 10% 14%;
@@ -33,7 +34,7 @@
 
     --border: 20 10% 18%;
     --input: 20 10% 16%;
-    --ring: 160 84% 42%;
+    --ring: 340 75% 58%;
 
     --radius: 0.5rem;
 
