@@ -47,10 +47,38 @@ public class ReminderService {
                 .get().get()
                 .getDocuments();
         List<Reminder> out = new ArrayList<>(docs.size());
-        for (QueryDocumentSnapshot d : docs) out.add(d.toObject(Reminder.class));
+        for (QueryDocumentSnapshot d : docs) {
+            try {
+                out.add(d.toObject(Reminder.class));
+            } catch (RuntimeException ex) {
+                // reason: the old buggy PUT controller stored dueAt as an ISO String
+                // in some rows. Heal the row in place (rewrite dueAt as a Timestamp)
+                // and reread, so a single bad doc can't wedge the whole list.
+                Reminder healed = tryHealAndReload(d);
+                if (healed != null) out.add(healed);
+                else log.warn("Skipping unreadable reminder {}: {}", d.getId(), ex.getMessage());
+            }
+        }
         out.sort(Comparator.comparing(
                 (Reminder r) -> r.getDueAt() == null ? Instant.MAX : r.getDueAt()));
         return out;
+    }
+
+    private Reminder tryHealAndReload(QueryDocumentSnapshot d) {
+        try {
+            Object raw = d.get("dueAt");
+            if (raw instanceof String s && !s.isBlank()) {
+                Instant parsed = Instant.parse(s);
+                firestore.collection(COLLECTION).document(d.getId())
+                        .update("dueAt", parsed).get();
+                log.info("Healed reminder {} — dueAt was a string ({}), rewrote as Timestamp", d.getId(), s);
+                return firestore.collection(COLLECTION).document(d.getId()).get().get()
+                        .toObject(Reminder.class);
+            }
+        } catch (Exception ex) {
+            log.warn("Heal attempt failed for reminder {}: {}", d.getId(), ex.getMessage());
+        }
+        return null;
     }
 
     /** Count of reminders the sidebar badge should show: open + due in 7 days or past due. */
