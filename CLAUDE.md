@@ -119,6 +119,10 @@ kin-keeper/
 | POST | `/api/family/invite` | Yes | Invite Google user to family |
 | PUT | `/api/settings/api-key` | Yes | Save encrypted Claude API key |
 | GET | `/api/settings/usage` | Yes | Self-metered Claude API usage + estimated cost (current month + lifetime) |
+| GET | `/api/push/config` | Yes | VAPID public key + feature flag |
+| POST | `/api/push/subscribe` | Yes | Register a browser PushSubscription |
+| POST | `/api/push/unsubscribe` | Yes | Remove a PushSubscription |
+| POST | `/api/push/test` | Yes | Fire a test notification to all of the caller's devices |
 | GET/POST/PUT/DELETE | `/api/contacts[/{id}]` | Yes | External contacts CRUD |
 | GET/POST/PUT/DELETE | `/api/assets[/{id}]` | Yes | Asset CRUD (HOME/VEHICLE/APPLIANCE/POLICY) |
 | GET/POST/PUT/DELETE | `/api/reminders[/{id}]` | Yes | Reminder CRUD |
@@ -159,6 +163,11 @@ conversations/{id}    → Conversation (familyId, title, format: ENCOUNTER|THREA
                         channel: CALL|VISIT|MESSAGE|EMAIL|MEETING|OTHER, occurredAt,
                         summary, outcome, followUp, messages: List<ConversationMessage>,
                         links: List<LinkRef>, createdBy, createdAt, updatedAt)
+push_subscriptions/{id} → PushSubscription (userId, endpoint, p256dh, auth,
+                        userAgent, createdAt, lastPushAt, lastFailureAt,
+                        lastFailureReason). id is a SHA-256 prefix of the
+                        endpoint URL so resubscribing the same device overwrites
+                        in place.
 bills/{id}            → Bill (familyId, assetId (POLICY), dueAt, paidAt, amount,
                         currency (default INR), source: MANUAL|SMS|EMAIL|CHAT,
                         sourceText, notes, createdBy, createdAt). Creating a

@@ -76,35 +76,23 @@ under POLICY (or whatever the contents suggest).
   ones is fine; we don't need to host a mail client.
 - Outbound email. Kin-Keeper reads, never sends.
 
-## PWA Share Target — file sharing via POST (deferred)
+## PWA Share Target — file sharing via POST (deferred, partial)
 
-**Status:** text sharing (method: GET) shipped via `vite.config.ts`
-`share_target` + the `/share` route. File sharing (PDFs, images from a share
-sheet) is not wired yet.
-
-### Why it's deferred
-Files require `method: POST` with `enctype: multipart/form-data`, which React
-Router can't serve directly — the browser POSTs the share to our origin and
-expects a response. We need a service worker that intercepts the POST,
-stashes the files in Cache Storage, and redirects the page to `/share?key=…`
-where the React route can pull them out and feed them to the staging endpoint.
-
-Our current PWA uses `generateSW` mode, which doesn't expose a fetch hook for
-custom POST handlers. Implementing file sharing means switching to
-`injectManifest` mode and writing a small `sw.ts` alongside the Vite build.
+**Status:** text sharing (method: GET) shipped. The PWA is now on
+`injectManifest` mode (pulled forward for push notifications), so the
+remaining work is only the fetch-handler + manifest update — the SW flip
+itself is done.
 
 ### What to build when we pick it up
-1. Flip `VitePWA({ strategies: 'injectManifest', srcDir: 'src', filename: 'sw.ts' })`.
-2. In `sw.ts`: `precacheAndRoute(self.__WB_MANIFEST)` for the app shell, plus
-   a `self.addEventListener('fetch', …)` that matches `POST /share`, reads
-   `await event.request.formData()`, writes each `File` into a dedicated
-   `Cache` under `/__shared/<key>/<i>`, then
+1. Extend `src/sw.ts` with a `self.addEventListener('fetch', …)` that matches
+   `POST /share`, reads `await event.request.formData()`, writes each `File`
+   into a dedicated `Cache` under `/__shared/<key>/<i>`, then
    `return Response.redirect('/share?key=<key>', 303)`.
-3. Update `SharePage.tsx` to recognise `?key=…`, fetch each cached file back
+2. Update `SharePage.tsx` to recognise `?key=…`, fetch each cached file back
    as a `Blob`, wrap as `File`, and feed into the existing
    `POST /api/chat/attachments` + new-session flow.
-4. Add `files: [{ name: 'file', accept: [...] }]` to the manifest's
-   `share_target.params`.
+3. Add `files: [{ name: 'file', accept: [...] }]` to the manifest's
+   `share_target.params` in `vite.config.ts`.
 
 ### Non-goals
 - Background ingestion (receiving a share while the app isn't open and

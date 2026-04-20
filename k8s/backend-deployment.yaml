@@ -39,6 +39,13 @@ spec:
                 optional: true
             - secretRef:
                 name: redis-auth
+            # reason: VAPID keys for web push. Optional so the deployment keeps
+            # rolling before the SealedSecret is created; PushService reports
+            # disabled until both env vars land. Generate with
+            # scripts/generate-vapid.sh and seal into k8s/webpush-sealed-secret.yaml.
+            - secretRef:
+                name: kin-keeper-webpush
+                optional: true
           volumeMounts:
             - name: firebase-credentials
               mountPath: /etc/firebase

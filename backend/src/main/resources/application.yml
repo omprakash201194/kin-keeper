@@ -34,6 +34,15 @@ google:
 anthropic:
   default-model: claude-sonnet-4-6
 
+# reason: VAPID keys must be a one-time-generated ECDSA P-256 pair. When unset
+# the PushService reports enabled=false and the Settings page shows an
+# 'admin hasn't configured push' banner instead of failing silently. See
+# scripts/generate-vapid.sh for the generation + k8s sealed-secret flow.
+webpush:
+  public-key: ${WEBPUSH_PUBLIC_KEY:}
+  private-key: ${WEBPUSH_PRIVATE_KEY:}
+  subject: ${WEBPUSH_SUBJECT:mailto:admin@kin-keeper.local}
+
 management:
   endpoints:
     web:

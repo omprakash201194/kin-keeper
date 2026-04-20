@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
-import { Key, User, Cloud, MessageSquare, LineChart } from 'lucide-react'
+import { Key, User, Cloud, MessageSquare, LineChart, BellRing } from 'lucide-react'
 import apiClient from '@/services/api'
+import {
+  getPushConfig, isPushSupported, currentSubscription,
+  subscribeToPush, unsubscribeFromPush, sendTestNotification,
+} from '@/lib/push'
 
 type ModelUsage = {
   model: string
@@ -66,6 +70,12 @@ export default function SettingsPage() {
 
   const [usage, setUsage] = useState<UsageReport | null>(null)
 
+  const [pushSupported, setPushSupported] = useState(false)
+  const [pushServerEnabled, setPushServerEnabled] = useState(false)
+  const [pushSubscribed, setPushSubscribed] = useState(false)
+  const [pushPublicKey, setPushPublicKey] = useState('')
+  const [pushWorking, setPushWorking] = useState(false)
+
   useEffect(() => {
     // Handle redirect-back from the Drive OAuth callback
     const params = new URLSearchParams(window.location.search)
@@ -92,10 +102,62 @@ export default function SettingsPage() {
       setDriveConnected(driveRes.data.connected)
       setDriveConfigured(driveRes.data.configured)
       if (usageRes) setUsage(usageRes.data)
+      // Push status — best effort; older browsers / non-PWA contexts may reject.
+      try {
+        const supported = await isPushSupported()
+        setPushSupported(supported)
+        if (supported) {
+          const cfg = await getPushConfig()
+          setPushServerEnabled(cfg.enabled)
+          setPushPublicKey(cfg.publicKey)
+          const current = await currentSubscription()
+          setPushSubscribed(!!current)
+        }
+      } catch {
+        setPushSupported(false)
+      }
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load settings')
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function handlePushToggle(next: boolean) {
+    setPushWorking(true)
+    setError(null)
+    setStatus(null)
+    try {
+      if (next) {
+        if (!pushPublicKey) throw new Error('Server has no VAPID key configured')
+        await subscribeToPush(pushPublicKey)
+        setPushSubscribed(true)
+        setStatus('Push notifications enabled on this device.')
+      } else {
+        await unsubscribeFromPush()
+        setPushSubscribed(false)
+        setStatus('Push notifications disabled on this device.')
+      }
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to change push subscription')
+    } finally {
+      setPushWorking(false)
+    }
+  }
+
+  async function handlePushTest() {
+    setPushWorking(true)
+    setError(null)
+    setStatus(null)
+    try {
+      const sent = await sendTestNotification()
+      setStatus(sent > 0
+        ? `Sent to ${sent} device${sent === 1 ? '' : 's'} — you should see a notification.`
+        : 'No subscribed devices yet. Enable push on this device first.')
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Test push failed')
+    } finally {
+      setPushWorking(false)
     }
   }
 
@@ -303,6 +365,53 @@ export default function SettingsPage() {
             {saving ? 'Saving…' : 'Save'}
           </Button>
         </div>
+      </section>
+
+      {/* Push notifications */}
+      <section className="mb-8">
+        <h2 className="flex items-center gap-2 text-lg font-medium mb-4">
+          <BellRing className="w-5 h-5" />
+          Push notifications
+        </h2>
+        <p className="text-sm text-muted-foreground mb-4">
+          Get a daily nudge on this device for overdue and upcoming reminders.
+          Install Kin-Keeper as a PWA first — browser tabs can't receive push.
+        </p>
+        {!pushSupported ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+            This browser doesn't support web push. Try installing Kin-Keeper
+            as an app (Add to Home Screen) on mobile Chrome / Safari / Edge.
+          </div>
+        ) : !pushServerEnabled ? (
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+            Server-side VAPID keys aren't configured yet. Ask the admin to set
+            <code className="mx-1">WEBPUSH_PUBLIC_KEY</code> and
+            <code className="mx-1">WEBPUSH_PRIVATE_KEY</code>.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <Button
+                onClick={() => handlePushToggle(!pushSubscribed)}
+                disabled={pushWorking}
+                variant={pushSubscribed ? 'outline' : 'default'}
+              >
+                {pushWorking
+                  ? 'Working…'
+                  : pushSubscribed ? 'Disable on this device' : 'Enable on this device'}
+              </Button>
+              {pushSubscribed && (
+                <Button onClick={handlePushTest} variant="ghost" size="sm" disabled={pushWorking}>
+                  Send test notification
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              The daily digest fires at 07:00 UTC (12:30 IST). Each enabled device
+              gets one summary per day; no per-reminder spam.
+            </p>
+          </div>
+        )}
       </section>
 
       {/* API usage */}

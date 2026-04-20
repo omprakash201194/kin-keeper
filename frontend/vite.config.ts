@@ -8,6 +8,16 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      // reason: flipped from generateSW to injectManifest so we can add a 'push'
+      // event handler for reminder notifications. Workbox still precaches the
+      // app shell via self.__WB_MANIFEST — we just own the shell.
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
+      injectManifest: {
+        // keep the usual app-shell precache; don't include Firestore etc.
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest}'],
+      },
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'Kin-Keeper',
@@ -39,25 +49,6 @@ export default defineConfig({
             url: 'url',
           },
         },
-      },
-      workbox: {
-        // reason: don't cache /api/* — auth token freshness and live data matter more
-        // than offline API access; we only precache the app shell.
-        navigateFallbackDenylist: [/^\/api\//],
-        // reason: when a new SW ships (e.g. the nginx MIME fix), skipWaiting lets it
-        // activate immediately instead of waiting for every tab to be closed, and
-        // clientsClaim has it take over existing pages. Without these, users who
-        // installed an older broken version stay stuck on the old SW until they
-        // manually close every tab.
-        skipWaiting: true,
-        clientsClaim: true,
-        cleanupOutdatedCaches: true,
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\/.*/i,
-            handler: 'NetworkOnly',
-          },
-        ],
       },
     }),
   ],
