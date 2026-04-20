@@ -22,10 +22,6 @@ import java.util.Map;
 @RequestMapping("/api/reminders")
 public class ReminderController {
 
-    private static final List<String> EDITABLE_FIELDS = List.of(
-            "title", "notes", "dueAt", "recurrence", "recurrenceIntervalKm",
-            "dueOdometerKm", "linkedRefs", "completed");
-
     private final ReminderService reminderService;
     private final FamilyService familyService;
     private final UserService userService;
@@ -68,10 +64,20 @@ public class ReminderController {
                                            @RequestBody Map<String, Object> body) throws Exception {
         userService.requireAdmin(principal.uid());
         Family family = requireFamily(principal);
+        // reason: convert the raw body to a typed Reminder first so Instant/enum/
+        // LinkRef fields land as proper Java objects. Sending the raw JSON map to
+        // Firestore.update() stores ISO strings under fields the POJO expects as
+        // Instant — subsequent reads blow up with deserialization errors.
+        Reminder typed = objectMapper.convertValue(body, Reminder.class);
         Map<String, Object> updates = new HashMap<>();
-        for (String f : EDITABLE_FIELDS) {
-            if (body.containsKey(f)) updates.put(f, body.get(f));
-        }
+        if (body.containsKey("title"))                updates.put("title",                typed.getTitle());
+        if (body.containsKey("notes"))                updates.put("notes",                typed.getNotes());
+        if (body.containsKey("dueAt"))                updates.put("dueAt",                typed.getDueAt());
+        if (body.containsKey("recurrence"))           updates.put("recurrence",           typed.getRecurrence());
+        if (body.containsKey("recurrenceIntervalKm")) updates.put("recurrenceIntervalKm", typed.getRecurrenceIntervalKm());
+        if (body.containsKey("dueOdometerKm"))        updates.put("dueOdometerKm",        typed.getDueOdometerKm());
+        if (body.containsKey("linkedRefs"))           updates.put("linkedRefs",           typed.getLinkedRefs());
+        if (body.containsKey("completed"))            updates.put("completed",            typed.isCompleted());
         return ResponseEntity.ok(reminderService.update(family.getId(), id, updates));
     }
 
