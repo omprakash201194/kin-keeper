@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.Instant;
+import java.util.List;
 
 @Data
 @Builder
@@ -18,10 +19,15 @@ public class ChatMessage {
     private String content;
     private Instant createdAt;
 
-    // Populated only on user messages that carried an attachment.
+    // Legacy single-attachment fields (kept so old messages still render).
     private String attachmentFileName;
     private String attachmentMimeType;
-    // Filled in after-the-fact if the agent's save_attachment tool persisted the file
-    // to Drive. Lets the UI render an inline preview of the saved document.
     private String attachmentDocumentId;
+
+    /**
+     * Current source of truth for attachments. New user messages always write
+     * this list — the singular fields above stay blank on new writes so the
+     * UI can key entirely off `attachments` once old history ages out.
+     */
+    private List<ChatAttachment> attachments;
 }

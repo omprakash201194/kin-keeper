@@ -80,6 +80,51 @@ public class DocumentController {
         return ResponseEntity.ok(doc);
     }
 
+    /**
+     * Bulk upload N files, each sharing the same member/category/labels/links.
+     * Used by the Documents page "Upload all to same category" flow. Files that
+     * fail individually are reported in `failed`; successes land in `documents`.
+     */
+    @PostMapping("/bulk-upload")
+    public ResponseEntity<?> bulkUpload(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                        @RequestParam("files") List<MultipartFile> files,
+                                        @RequestParam(required = false) String memberId,
+                                        @RequestParam String categoryId,
+                                        @RequestParam(required = false) String notes,
+                                        @RequestParam(required = false) String labels,
+                                        @RequestParam(required = false) String links) throws Exception {
+        userService.requireAdmin(principal.uid());
+        if (files == null || files.isEmpty()) throw new IllegalArgumentException("files is empty");
+
+        List<LinkRef> parsedLinks = parseLinks(links);
+        if (memberId != null && !memberId.isBlank()
+                && parsedLinks.stream().noneMatch(l -> "MEMBER".equalsIgnoreCase(String.valueOf(l.getType()))
+                        && memberId.equals(l.getId()))) {
+            parsedLinks = new java.util.ArrayList<>(parsedLinks);
+            parsedLinks.add(LinkRef.builder().type(com.ogautam.kinkeeper.model.LinkType.MEMBER).id(memberId).build());
+        }
+        List<String> parsedLabels = parseLabels(labels);
+
+        List<Document> saved = new java.util.ArrayList<>();
+        List<Map<String, String>> failed = new java.util.ArrayList<>();
+        for (MultipartFile f : files) {
+            if (f == null || f.isEmpty()) continue;
+            try {
+                String mime = f.getContentType() != null ? f.getContentType() : "application/octet-stream";
+                Document doc = documentService.uploadDocument(
+                        principal, f.getOriginalFilename(), mime, f.getSize(), f.getInputStream(),
+                        memberId, categoryId, notes, parsedLabels, parsedLinks);
+                saved.add(doc);
+            } catch (Exception ex) {
+                log.warn("Bulk upload failed for {}: {}", f.getOriginalFilename(), ex.getMessage());
+                failed.add(Map.of(
+                        "fileName", f.getOriginalFilename() == null ? "" : f.getOriginalFilename(),
+                        "error", ex.getMessage() == null ? "upload failed" : ex.getMessage()));
+            }
+        }
+        return ResponseEntity.ok(Map.of("documents", saved, "failed", failed));
+    }
+
     @PutMapping("/{id}/links")
     public ResponseEntity<?> updateLinks(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                          @PathVariable String id,

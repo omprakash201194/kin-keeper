@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Upload, FileText, Download, Trash2, Camera, FileUp } from 'lucide-react'
+import { Upload, FileText, Download, Trash2, Camera, FileUp, Sparkles, X } from 'lucide-react'
 import { useRef } from 'react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
@@ -37,14 +38,16 @@ export default function DocumentsPage() {
   const [groupBy, setGroupBy] = useState<'none' | 'member' | 'category'>('none')
 
   const [showUpload, setShowUpload] = useState(false)
-  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
   const [uploadMemberId, setUploadMemberId] = useState('')
   const [uploadCategoryId, setUploadCategoryId] = useState('')
   const [uploadNotes, setUploadNotes] = useState('')
   const [uploadLabels, setUploadLabels] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [aiSorting, setAiSorting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const cameraInputRef = useRef<HTMLInputElement>(null)
+  const navigate = useNavigate()
 
   const [error, setError] = useState<string | null>(null)
 
@@ -87,34 +90,95 @@ export default function DocumentsPage() {
     }
   }
 
+  function appendFiles(picked: FileList | null) {
+    if (!picked || picked.length === 0) return
+    setUploadFiles((prev) => [...prev, ...Array.from(picked)])
+  }
+
+  function removeFileAt(i: number) {
+    setUploadFiles((prev) => prev.filter((_, idx) => idx !== i))
+  }
+
+  function resetUploadForm() {
+    setUploadFiles([])
+    setUploadMemberId('')
+    setUploadCategoryId('')
+    setUploadNotes('')
+    setUploadLabels('')
+    setShowUpload(false)
+  }
+
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
-    if (!uploadFile || !uploadMemberId || !uploadCategoryId) return
-
-    const form = new FormData()
-    form.append('file', uploadFile)
-    form.append('memberId', uploadMemberId)
-    form.append('categoryId', uploadCategoryId)
-    if (uploadNotes.trim()) form.append('notes', uploadNotes.trim())
-    if (uploadLabels.trim()) form.append('labels', uploadLabels.trim())
+    if (uploadFiles.length === 0 || !uploadMemberId || !uploadCategoryId) return
 
     setUploading(true)
     setError(null)
     try {
-      await apiClient.post('/documents/upload', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      })
-      setUploadFile(null)
-      setUploadMemberId('')
-      setUploadCategoryId('')
-      setUploadNotes('')
-      setUploadLabels('')
-      setShowUpload(false)
+      if (uploadFiles.length === 1) {
+        const form = new FormData()
+        form.append('file', uploadFiles[0])
+        form.append('memberId', uploadMemberId)
+        form.append('categoryId', uploadCategoryId)
+        if (uploadNotes.trim()) form.append('notes', uploadNotes.trim())
+        if (uploadLabels.trim()) form.append('labels', uploadLabels.trim())
+        await apiClient.post('/documents/upload', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+      } else {
+        const form = new FormData()
+        for (const f of uploadFiles) form.append('files', f)
+        form.append('memberId', uploadMemberId)
+        form.append('categoryId', uploadCategoryId)
+        if (uploadNotes.trim()) form.append('notes', uploadNotes.trim())
+        if (uploadLabels.trim()) form.append('labels', uploadLabels.trim())
+        const res = await apiClient.post<{ documents: unknown[]; failed: Array<{ fileName: string; error: string }> }>(
+          '/documents/bulk-upload', form, { headers: { 'Content-Type': 'multipart/form-data' } }
+        )
+        if (res.data.failed?.length) {
+          setError(`Uploaded ${res.data.documents.length}/${uploadFiles.length}. Failed: ${res.data.failed.map((f) => f.fileName).join(', ')}`)
+        }
+      }
+      resetUploadForm()
       await reloadDocuments()
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Upload failed')
     } finally {
       setUploading(false)
+    }
+  }
+
+  /**
+   * Stage every selected file as a chat attachment, start a new chat session,
+   * send a "please classify these" prompt, and navigate to the chat. The agent
+   * handles the rest via save_attachment per file.
+   */
+  async function handleAiSort() {
+    if (uploadFiles.length === 0) return
+    setAiSorting(true)
+    setError(null)
+    try {
+      const attachmentIds: string[] = []
+      for (const f of uploadFiles) {
+        const form = new FormData()
+        form.append('file', f)
+        const up = await apiClient.post<{ attachmentId: string }>('/chat/attachments', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        attachmentIds.push(up.data.attachmentId)
+      }
+      const session = await apiClient.post<{ id: string }>('/chat/sessions')
+      const n = uploadFiles.length
+      const prompt = `I'm uploading ${n} document${n === 1 ? '' : 's'}. Please inspect each one, pick the right category (create a new one if needed), decide which family member or asset it belongs to, and save each with save_attachment. Report what you did.`
+      void apiClient.post(`/chat/sessions/${session.data.id}/message`, {
+        message: prompt,
+        attachmentIds,
+      })
+      navigate('/chat')
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'AI sort failed. Is your Claude API key set?')
+    } finally {
+      setAiSorting(false)
     }
   }
 
@@ -219,20 +283,23 @@ export default function DocumentsPage() {
           <div className="flex flex-wrap gap-2">
             <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
               <FileUp className="w-4 h-4 mr-2" />
-              Choose file
+              Choose files
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
               <Camera className="w-4 h-4 mr-2" />
               Scan document
             </Button>
             <span className="text-sm text-muted-foreground self-center truncate">
-              {uploadFile ? uploadFile.name : 'No file selected'}
+              {uploadFiles.length === 0
+                ? 'No files selected'
+                : `${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} selected`}
             </span>
           </div>
           <input
             ref={fileInputRef}
             type="file"
-            onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+            multiple
+            onChange={(e) => { appendFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }}
             className="hidden"
           />
           <input
@@ -240,15 +307,37 @@ export default function DocumentsPage() {
             type="file"
             accept="image/*"
             capture="environment"
-            onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+            onChange={(e) => { appendFiles(e.target.files); if (cameraInputRef.current) cameraInputRef.current.value = '' }}
             className="hidden"
           />
+
+          {uploadFiles.length > 0 && (
+            <ul className="divide-y rounded-md border bg-muted/30 text-sm max-h-48 overflow-y-auto">
+              {uploadFiles.map((f, i) => (
+                <li key={`${f.name}-${i}`} className="px-3 py-2 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <span className="flex-1 min-w-0 truncate">{f.name}</span>
+                  <span className="text-[11px] text-muted-foreground shrink-0">
+                    {Math.round(f.size / 1024)} KB
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => removeFileAt(i)}
+                    className="text-muted-foreground hover:text-red-600"
+                    title="Remove"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <select
               value={uploadMemberId}
               onChange={(e) => setUploadMemberId(e.target.value)}
               className="rounded-md border px-3 py-2 text-sm"
-              required
             >
               <option value="">Select member…</option>
               {members.map((m) => (
@@ -259,7 +348,6 @@ export default function DocumentsPage() {
               value={uploadCategoryId}
               onChange={(e) => setUploadCategoryId(e.target.value)}
               className="rounded-md border px-3 py-2 text-sm"
-              required
             >
               <option value="">Select category…</option>
               {categoryTree.map((c) => (
@@ -279,13 +367,37 @@ export default function DocumentsPage() {
           <textarea
             value={uploadNotes}
             onChange={(e) => setUploadNotes(e.target.value)}
-            placeholder="Notes (optional)"
+            placeholder="Notes (optional — applies to every file in this upload)"
             className="w-full rounded-md border px-3 py-2 text-sm"
             rows={2}
           />
-          <Button type="submit" disabled={uploading}>
-            {uploading ? 'Uploading…' : 'Upload'}
-          </Button>
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Button
+              type="submit"
+              disabled={uploading || aiSorting || uploadFiles.length === 0 || !uploadMemberId || !uploadCategoryId}
+            >
+              {uploading
+                ? 'Uploading…'
+                : uploadFiles.length > 1
+                  ? `Upload all ${uploadFiles.length} to same category`
+                  : 'Upload'}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleAiSort}
+              disabled={uploading || aiSorting || uploadFiles.length === 0}
+              title="Stage files to a new chat and let Claude pick the right category/member per file"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              {aiSorting ? 'Opening chat…' : 'Let AI sort them'}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            "Upload all to same category" needs member + category picked above. "Let AI sort them"
+            ignores those and hands every file to Claude to classify individually.
+          </p>
         </form>
       )}
 

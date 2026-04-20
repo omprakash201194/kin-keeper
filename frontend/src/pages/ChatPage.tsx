@@ -11,13 +11,17 @@ type ChatSession = {
   expiresAt?: string
 }
 
+type ChatAttachment = {
+  fileName?: string
+  mimeType?: string
+  documentId?: string
+}
+
 type Message = {
   id: string
   role: 'user' | 'assistant'
   content: string
-  attachmentFileName?: string
-  attachmentMimeType?: string
-  attachmentDocumentId?: string
+  attachments?: ChatAttachment[]
 }
 
 type SessionWithMessages = {
@@ -29,7 +33,27 @@ type SessionWithMessages = {
     attachmentFileName?: string
     attachmentMimeType?: string
     attachmentDocumentId?: string
+    attachments?: ChatAttachment[]
   }>
+}
+
+// Normalize legacy single-attachment fields into the `attachments` list so the UI
+// only ever has to deal with one shape.
+function normalizeAttachments(m: {
+  attachmentFileName?: string
+  attachmentMimeType?: string
+  attachmentDocumentId?: string
+  attachments?: ChatAttachment[]
+}): ChatAttachment[] | undefined {
+  if (m.attachments && m.attachments.length > 0) return m.attachments
+  if (m.attachmentFileName) {
+    return [{
+      fileName: m.attachmentFileName,
+      mimeType: m.attachmentMimeType,
+      documentId: m.attachmentDocumentId,
+    }]
+  }
+  return undefined
 }
 
 /**
@@ -91,7 +115,7 @@ export default function ChatPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [attachment, setAttachment] = useState<File | null>(null)
+  const [attachments, setAttachments] = useState<File[]>([])
   const [loadingSessions, setLoadingSessions] = useState(true)
   const [loadingMessages, setLoadingMessages] = useState(false)
   const [sending, setSending] = useState(false)
@@ -138,9 +162,7 @@ export default function ChatPage() {
         id: m.id,
         role: m.role as 'user' | 'assistant',
         content: m.content,
-        attachmentFileName: m.attachmentFileName,
-        attachmentMimeType: m.attachmentMimeType,
-        attachmentDocumentId: m.attachmentDocumentId,
+        attachments: normalizeAttachments(m),
       })))
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load chat')
@@ -179,7 +201,7 @@ export default function ChatPage() {
 
   async function handleSend() {
     const text = input.trim()
-    if ((!text && !attachment) || sending) return
+    if ((!text && attachments.length === 0) || sending) return
 
     let sessionId = activeId
     if (!sessionId) {
@@ -194,46 +216,46 @@ export default function ChatPage() {
       }
     }
 
-    const pending = attachment
-    const displayText = pending
-      ? (text ? `${text}\n\n[attached: ${pending.name}]` : `[attached: ${pending.name}]`)
+    const pending = attachments
+    const tagLine = pending.length > 0 ? pending.map((f) => `[attached: ${f.name}]`).join(' ') : ''
+    const displayText = pending.length > 0
+      ? (text ? `${text}\n\n${tagLine}` : tagLine)
       : text
     const userMsg: Message = {
       id: `u-${Date.now()}`,
       role: 'user',
       content: displayText,
-      attachmentFileName: pending?.name,
-      attachmentMimeType: pending?.type,
+      attachments: pending.length > 0
+        ? pending.map((f) => ({ fileName: f.name, mimeType: f.type }))
+        : undefined,
     }
     setMessages((prev) => [...prev, userMsg])
     setInput('')
-    setAttachment(null)
+    setAttachments([])
     setError(null)
     setSending(true)
 
     try {
-      let attachmentId: string | null = null
-      if (pending) {
+      const attachmentIds: string[] = []
+      for (const f of pending) {
         const form = new FormData()
-        form.append('file', pending)
+        form.append('file', f)
         const up = await apiClient.post<{ attachmentId: string }>('/chat/attachments', form, {
           headers: { 'Content-Type': 'multipart/form-data' },
         })
-        attachmentId = up.data.attachmentId
+        attachmentIds.push(up.data.attachmentId)
       }
 
       const res = await apiClient.post<{ reply: string; messageId: string }>(
         `/chat/sessions/${sessionId}/message`,
-        { message: text, attachmentId },
+        { message: text, attachmentIds },
       )
       setMessages((prev) => [
         ...prev,
         { id: res.data.messageId, role: 'assistant', content: res.data.reply },
       ])
-      // Refresh so the user message picks up attachmentDocumentId (if the agent
-      // saved the attachment) and the optimistic local message is replaced with
-      // the server-authoritative copy.
-      if (pending && sessionId) void loadMessages(sessionId)
+      // Refresh so user messages pick up any Drive document ids the agent saved.
+      if (pending.length > 0 && sessionId) void loadMessages(sessionId)
       void loadSessions(false)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Chat failed. Have you added your Claude API key in Settings?')
@@ -242,17 +264,23 @@ export default function ChatPage() {
     }
   }
 
-  // Compose-time preview: turn the File into an object URL and clean up on change.
-  const [attachmentPreviewUrl, setAttachmentPreviewUrl] = useState<string | null>(null)
+  // Compose-time preview urls, one per attached file. Object URLs are revoked
+  // when the set of files changes so we don't leak them between sends.
+  const [attachmentPreviewUrls, setAttachmentPreviewUrls] = useState<Array<string | null>>([])
   useEffect(() => {
-    if (!attachment || !attachment.type.startsWith('image/')) {
-      setAttachmentPreviewUrl(null)
-      return
-    }
-    const url = URL.createObjectURL(attachment)
-    setAttachmentPreviewUrl(url)
-    return () => URL.revokeObjectURL(url)
-  }, [attachment])
+    const urls = attachments.map((f) => f.type.startsWith('image/') ? URL.createObjectURL(f) : null)
+    setAttachmentPreviewUrls(urls)
+    return () => { urls.forEach((u) => { if (u) URL.revokeObjectURL(u) }) }
+  }, [attachments])
+
+  function appendFiles(picked: FileList | null) {
+    if (!picked || picked.length === 0) return
+    setAttachments((prev) => [...prev, ...Array.from(picked)])
+  }
+
+  function removeAttachmentAt(index: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== index))
+  }
 
   function formatDate(iso?: string) {
     if (!iso) return ''
@@ -378,12 +406,17 @@ export default function ChatPage() {
                       : 'bg-muted text-foreground'
                   }`}
                 >
-                  {msg.role === 'user' && msg.attachmentFileName && (
-                    <MessageAttachment
-                      fileName={msg.attachmentFileName}
-                      mimeType={msg.attachmentMimeType}
-                      documentId={msg.attachmentDocumentId}
-                    />
+                  {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
+                    <div className="space-y-2 mb-2">
+                      {msg.attachments.map((a, i) => (
+                        <MessageAttachment
+                          key={`${msg.id}-att-${i}`}
+                          fileName={a.fileName ?? ''}
+                          mimeType={a.mimeType}
+                          documentId={a.documentId}
+                        />
+                      ))}
+                    </div>
                   )}
                   {msg.role === 'assistant' ? (
                     <ReactMarkdown
@@ -429,33 +462,36 @@ export default function ChatPage() {
         </div>
 
         <div className="border-t p-4 space-y-2">
-          {attachment && (
-            <div className="flex items-center gap-3 bg-muted px-3 py-2 rounded-md text-xs">
-              {attachmentPreviewUrl ? (
-                <img
-                  src={attachmentPreviewUrl}
-                  alt={attachment.name}
-                  className="w-12 h-12 rounded object-cover shrink-0"
-                />
-              ) : (
-                <div className="w-12 h-12 rounded bg-background border flex items-center justify-center shrink-0">
-                  <Paperclip className="w-4 h-4 text-muted-foreground" />
+          {attachments.length > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {attachments.map((f, i) => (
+                <div key={`${f.name}-${i}`} className="flex items-center gap-3 bg-muted px-3 py-2 rounded-md text-xs">
+                  {attachmentPreviewUrls[i] ? (
+                    <img
+                      src={attachmentPreviewUrls[i] ?? undefined}
+                      alt={f.name}
+                      className="w-12 h-12 rounded object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded bg-background border flex items-center justify-center shrink-0">
+                      <Paperclip className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="truncate font-medium">{f.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {Math.round(f.size / 1024)} KB{f.type ? ` · ${f.type}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => removeAttachmentAt(i)}
+                    className="text-muted-foreground hover:text-red-600"
+                    title="Remove attachment"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-              )}
-              <div className="flex-1 min-w-0">
-                <p className="truncate font-medium">{attachment.name}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {Math.round(attachment.size / 1024)} KB
-                  {attachment.type ? ` · ${attachment.type}` : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => setAttachment(null)}
-                className="text-muted-foreground hover:text-red-600"
-                title="Remove attachment"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              ))}
             </div>
           )}
           <div className="flex gap-2 items-center">
@@ -482,8 +518,9 @@ export default function ChatPage() {
             <input
               ref={fileInputRef}
               type="file"
+              multiple
               className="hidden"
-              onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+              onChange={(e) => { appendFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }}
             />
             <input
               ref={cameraInputRef}
@@ -491,18 +528,20 @@ export default function ChatPage() {
               accept="image/*"
               capture="environment"
               className="hidden"
-              onChange={(e) => setAttachment(e.target.files?.[0] ?? null)}
+              onChange={(e) => { appendFiles(e.target.files); if (cameraInputRef.current) cameraInputRef.current.value = '' }}
             />
             <input
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-              placeholder={attachment ? 'Describe the document (optional)…' : 'Ask about your documents...'}
+              placeholder={attachments.length > 0
+                ? attachments.length === 1 ? 'Describe the document (optional)…' : `Describe ${attachments.length} files or ask to classify them…`
+                : 'Ask about your documents...'}
               disabled={sending}
               className="flex-1 rounded-lg border border-input bg-background px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-60"
             />
-            <Button onClick={handleSend} size="icon" disabled={sending || (!input.trim() && !attachment)}>
+            <Button onClick={handleSend} size="icon" disabled={sending || (!input.trim() && attachments.length === 0)}>
               <Send className="w-4 h-4" />
             </Button>
           </div>

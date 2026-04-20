@@ -4,6 +4,7 @@ import com.ogautam.kinkeeper.agent.AttachmentService;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent.ChatReply;
 import com.ogautam.kinkeeper.agent.KinKeeperAgent.ChatTurn;
+import com.ogautam.kinkeeper.model.ChatAttachment;
 import com.ogautam.kinkeeper.model.ChatMessage;
 import com.ogautam.kinkeeper.model.ChatSession;
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
@@ -64,19 +65,33 @@ public class ChatController {
                                      @RequestBody SendRequest body) throws Exception {
         ChatSession session = sessions.get(principal, id);
 
-        // Resolve effective attachment: new upload this turn, or the session's pending one.
-        String effectiveAttachmentId = body.attachmentId() != null && !body.attachmentId().isBlank()
-                ? body.attachmentId()
-                : session.getPendingAttachmentId();
-
-        if ((body.message() == null || body.message().isBlank())
-                && (effectiveAttachmentId == null || effectiveAttachmentId.isBlank())) {
-            throw new IllegalArgumentException("message or attachmentId is required");
+        // Resolve effective attachments: new uploads this turn if present, otherwise
+        // whatever the session still has staged from prior turns. Supports both the
+        // list-form `attachmentIds` (primary) and the legacy singular `attachmentId`.
+        List<String> incoming = new ArrayList<>();
+        if (body.attachmentIds() != null) {
+            for (String aid : body.attachmentIds()) {
+                if (aid != null && !aid.isBlank()) incoming.add(aid);
+            }
+        }
+        if (incoming.isEmpty() && body.attachmentId() != null && !body.attachmentId().isBlank()) {
+            incoming.add(body.attachmentId());
         }
 
-        // Persist a new attachment on the session so follow-up turns stay contextual.
-        if (body.attachmentId() != null && !body.attachmentId().isBlank()) {
-            sessions.setPendingAttachment(principal, id, body.attachmentId());
+        List<String> effectiveIds;
+        if (!incoming.isEmpty()) {
+            effectiveIds = incoming;
+            sessions.setPendingAttachments(principal, id, incoming);
+        } else if (session.getPendingAttachmentIds() != null && !session.getPendingAttachmentIds().isEmpty()) {
+            effectiveIds = session.getPendingAttachmentIds();
+        } else if (session.getPendingAttachmentId() != null && !session.getPendingAttachmentId().isBlank()) {
+            effectiveIds = List.of(session.getPendingAttachmentId());
+        } else {
+            effectiveIds = List.of();
+        }
+
+        if ((body.message() == null || body.message().isBlank()) && effectiveIds.isEmpty()) {
+            throw new IllegalArgumentException("message or attachmentId is required");
         }
 
         List<ChatMessage> existing = sessions.listMessages(principal, id);
@@ -87,36 +102,52 @@ public class ChatController {
 
         String userContent = body.message() == null ? "" : body.message();
 
-        // Capture filename + mime from the staged attachment so the UI can show it
-        // in history even before (or without) the agent saving it.
-        String attachmentFileName = null;
-        String attachmentMimeType = null;
-        if (effectiveAttachmentId != null && !effectiveAttachmentId.isBlank()) {
+        // Capture filename + mime for every staged attachment so history can render
+        // previews even if the agent doesn't save each one.
+        List<ChatAttachment> attList = new ArrayList<>();
+        for (String aid : effectiveIds) {
             try {
-                AttachmentService.Loaded att = attachments.load(effectiveAttachmentId, principal.uid());
-                attachmentFileName = att.fileName();
-                attachmentMimeType = att.mimeType();
+                AttachmentService.Loaded att = attachments.load(aid, principal.uid());
+                attList.add(ChatAttachment.builder()
+                        .fileName(att.fileName())
+                        .mimeType(att.mimeType())
+                        .build());
             } catch (Exception ignored) {
-                // Attachment already expired from Redis — keep going without metadata.
+                // Redis entry expired — skip preview but still pass the id along.
             }
         }
-        String renderedUser = attachmentFileName != null
-                ? (userContent.isBlank() ? "[attached: " + attachmentFileName + "]"
-                        : userContent + "\n\n[attached: " + attachmentFileName + "]")
-                : userContent;
+        String renderedUser = renderUserContent(userContent, attList);
+        // reason: keep the legacy singular fields populated for the first attachment so
+        // older frontends that read them stay functional during the rollout window.
+        String firstName = attList.isEmpty() ? null : attList.get(0).getFileName();
+        String firstMime = attList.isEmpty() ? null : attList.get(0).getMimeType();
         ChatMessage userMsg = sessions.appendMessage(principal, id, "user",
-                renderedUser, attachmentFileName, attachmentMimeType);
+                renderedUser, firstName, firstMime, attList.isEmpty() ? null : attList);
 
-        ChatReply reply = agent.chat(principal, turns, userContent, effectiveAttachmentId, id);
+        ChatReply reply = agent.chat(principal, turns, userContent, effectiveIds, id);
 
-        // If the agent's save_attachment ran, patch the user message with the Drive doc id.
-        String savedDocId = sessions.consumeRecentlySavedDocument(id);
-        if (savedDocId != null && userMsg.getAttachmentFileName() != null) {
-            sessions.setMessageDocumentId(id, userMsg.getId(), savedDocId);
+        // Pair saved Drive doc ids with the message attachments in order.
+        List<String> savedDocIds = sessions.consumeRecentlySavedDocuments(id);
+        if (!savedDocIds.isEmpty()) {
+            if (!attList.isEmpty()) {
+                sessions.backfillMessageAttachments(id, userMsg.getId(), attList, savedDocIds);
+                // Keep legacy field in sync for clients still reading the singular.
+                sessions.setMessageDocumentId(id, userMsg.getId(), savedDocIds.get(0));
+            }
         }
 
         ChatMessage assistant = sessions.appendMessage(principal, id, "assistant", reply.text());
         return ResponseEntity.ok(Map.of("reply", reply.text(), "messageId", assistant.getId()));
+    }
+
+    private static String renderUserContent(String userContent, List<ChatAttachment> attachments) {
+        if (attachments.isEmpty()) return userContent;
+        StringBuilder tags = new StringBuilder();
+        for (ChatAttachment a : attachments) {
+            tags.append("\n[attached: ").append(a.getFileName() == null ? "" : a.getFileName()).append("]");
+        }
+        if (userContent.isBlank()) return tags.toString().trim();
+        return userContent + "\n" + tags.toString().trim();
     }
 
     @PostMapping("/attachments")
@@ -138,5 +169,5 @@ public class ChatController {
                 "size", staged.size()));
     }
 
-    public record SendRequest(String message, String attachmentId) {}
+    public record SendRequest(String message, String attachmentId, List<String> attachmentIds) {}
 }

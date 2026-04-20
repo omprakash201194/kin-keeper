@@ -104,13 +104,19 @@ public class KinKeeperAgent {
                                AFTER logging offer to create a reminder anchored on that
                                conversation (pass linkedRefs=[{type:CONVERSATION,id}]).
 
-            When the user attaches an image, inspect it, infer what it is, and pick
-            the right combination of MEMBER / CONTACT / ASSET. Call create_* as needed
-            before save_attachment. Keep labels short and ≤3.
+            When the user attaches files, inspect each one, infer what it is, and pick
+            the right combination of MEMBER / CONTACT / ASSET per file. Call create_*
+            as needed before save_attachment. Keep labels short and ≤3.
 
-            The attachmentId for the currently-attached file appears in the
-            [Attachment: ... attachmentId=...] tag on the user's message. The same
-            attachmentId stays valid across follow-up turns until save_attachment
+            A single user turn may carry MANY attachments — every file appears as its
+            own [Attachment: <name> (... attachmentId=<id>)] line. When the user
+            uploads several files and asks you to "classify" / "sort" / "file" them,
+            call save_attachment ONCE PER FILE, pairing each attachmentId with its
+            own memberId/categoryId/labels/links. Do not lump multiple files into a
+            single save_attachment call; the tool takes exactly one attachmentId at
+            a time.
+
+            An attachmentId stays valid across follow-up turns until save_attachment
             consumes it — reuse it without asking the user to re-attach.
 
             Keep answers brief.
@@ -163,7 +169,7 @@ public class KinKeeperAgent {
     public ChatReply chat(FirebaseUserPrincipal principal,
                           List<ChatTurn> history,
                           String userMessage,
-                          String attachmentId,
+                          List<String> attachmentIds,
                           String sessionId) throws Exception {
         String apiKey = userService.getApiKey(principal.uid());
         if (apiKey == null) {
@@ -182,38 +188,42 @@ public class KinKeeperAgent {
             }
         }
 
-        // If an attachment is present, stitch text + image into a single user turn.
-        if (attachmentId != null && !attachmentId.isBlank()) {
-            AttachmentService.Loaded att = attachmentService.load(attachmentId, principal.uid());
-            Base64ImageSource.MediaType mediaType = imageMediaTypeFor(att.mimeType());
-            if (mediaType == null) {
-                // Non-image — let the model know a file was attached but we can't analyze it inline.
-                messages.add(MessageParam.builder()
-                        .role(MessageParam.Role.USER)
-                        .content(userMessage
-                                + "\n\n[Attachment: " + att.fileName() + " (" + att.mimeType()
-                                + ", " + att.size() + " bytes, attachmentId=" + att.id() + ")]")
-                        .build());
-            } else {
+        // Multiple attachments: stitch each file's content (image inline when possible,
+        // PDF as a document block so Claude can read it) into a single user turn, then
+        // tag every file so save_attachment knows which id corresponds to which.
+        if (attachmentIds != null && !attachmentIds.isEmpty()) {
+            List<ContentBlockParam> parts = new ArrayList<>();
+            StringBuilder tags = new StringBuilder();
+            for (String aid : attachmentIds) {
+                if (aid == null || aid.isBlank()) continue;
+                AttachmentService.Loaded att = attachmentService.load(aid, principal.uid());
+                String mime = att.mimeType() == null ? "" : att.mimeType().toLowerCase();
                 String base64 = Base64.getEncoder().encodeToString(att.bytes());
-                ImageBlockParam imageBlock = ImageBlockParam.builder()
-                        .source(Base64ImageSource.builder()
-                                .data(base64)
-                                .mediaType(mediaType)
-                                .build())
-                        .build();
-                List<ContentBlockParam> parts = new ArrayList<>();
-                parts.add(ContentBlockParam.ofImage(imageBlock));
-                parts.add(ContentBlockParam.ofText(TextBlockParam.builder()
-                        .text(userMessage
-                                + "\n\n[Attachment: " + att.fileName()
-                                + ", attachmentId=" + att.id() + "]")
-                        .build()));
-                messages.add(MessageParam.builder()
-                        .role(MessageParam.Role.USER)
-                        .contentOfBlockParams(parts)
-                        .build());
+                Base64ImageSource.MediaType imgType = imageMediaTypeFor(mime);
+                if (imgType != null) {
+                    parts.add(ContentBlockParam.ofImage(ImageBlockParam.builder()
+                            .source(Base64ImageSource.builder().data(base64).mediaType(imgType).build())
+                            .build()));
+                } else if ("application/pdf".equals(mime)) {
+                    parts.add(ContentBlockParam.ofDocument(DocumentBlockParam.builder()
+                            .base64Source(base64)
+                            .title(att.fileName() != null ? att.fileName() : aid)
+                            .build()));
+                }
+                // reason: always append a text tag per file so save_attachment can look
+                // up the right attachmentId even if the content is non-inlineable.
+                tags.append("\n[Attachment: ").append(att.fileName() == null ? "" : att.fileName())
+                        .append(" (").append(att.mimeType()).append(", ")
+                        .append(att.size()).append(" bytes, attachmentId=")
+                        .append(att.id()).append(")]");
             }
+            parts.add(ContentBlockParam.ofText(TextBlockParam.builder()
+                    .text(userMessage + (tags.length() > 0 ? "\n" + tags : ""))
+                    .build()));
+            messages.add(MessageParam.builder()
+                    .role(MessageParam.Role.USER)
+                    .contentOfBlockParams(parts)
+                    .build());
         } else {
             messages.add(MessageParam.builder()
                     .role(MessageParam.Role.USER)
@@ -462,7 +472,10 @@ public class KinKeeperAgent {
                     userService.requireAdmin(principal.uid());
                     var saved = saveAttachment(principal, input);
                     if (sessionId != null) {
-                        chatSessionService.clearPendingAttachment(sessionId);
+                        String consumedId = (String) input.get("attachmentId");
+                        if (consumedId != null && !consumedId.isBlank()) {
+                            chatSessionService.clearPendingAttachment(sessionId, consumedId);
+                        }
                         chatSessionService.markRecentlySavedDocument(sessionId, saved.getId());
                     }
                     yield toJson(saved);

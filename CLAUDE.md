@@ -108,6 +108,7 @@ kin-keeper/
 | GET | `/api/auth/me` | Yes | Get current user profile |
 | GET | `/api/documents` | Yes | List documents (filter by member/category) |
 | POST | `/api/documents/upload` | Yes | Upload file to Drive + Firestore metadata |
+| POST | `/api/documents/bulk-upload` | Yes | Upload N files sharing the same member/category/labels/links; returns `{documents, failed}` |
 | GET | `/api/documents/{id}/download` | Yes | Stream file from Drive |
 | POST | `/api/chat/message` | Yes | Send message to AI agent |
 | POST | `/api/family` | Yes | Create family (caller becomes admin) |

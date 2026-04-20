@@ -125,6 +125,15 @@ public class ChatSessionService {
                                      String role, String content,
                                      String attachmentFileName, String attachmentMimeType)
             throws ExecutionException, InterruptedException {
+        return appendMessage(principal, sessionId, role, content,
+                attachmentFileName, attachmentMimeType, null);
+    }
+
+    public ChatMessage appendMessage(FirebaseUserPrincipal principal, String sessionId,
+                                     String role, String content,
+                                     String attachmentFileName, String attachmentMimeType,
+                                     List<com.ogautam.kinkeeper.model.ChatAttachment> attachments)
+            throws ExecutionException, InterruptedException {
         ChatSession session = get(principal, sessionId);
         Instant now = Instant.now();
         DocumentReference ref = messages(sessionId).document();
@@ -136,6 +145,7 @@ public class ChatSessionService {
                 .createdAt(now)
                 .attachmentFileName(attachmentFileName)
                 .attachmentMimeType(attachmentMimeType)
+                .attachments(attachments)
                 .build();
         ref.set(msg).get();
 
@@ -157,37 +167,77 @@ public class ChatSessionService {
         deleteCascade(sessionId);
     }
 
-    public void setPendingAttachment(FirebaseUserPrincipal principal, String sessionId, String attachmentId)
+    public void setPendingAttachments(FirebaseUserPrincipal principal, String sessionId, List<String> attachmentIds)
             throws ExecutionException, InterruptedException {
         get(principal, sessionId);
-        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
-                .update("pendingAttachmentId", attachmentId).get();
+        Map<String, Object> updates = new java.util.HashMap<>();
+        updates.put("pendingAttachmentIds", attachmentIds == null ? List.of() : attachmentIds);
+        // reason: keep legacy pendingAttachmentId in sync for the first file so any
+        // rolling reads that haven't been migrated still see something.
+        updates.put("pendingAttachmentId",
+                attachmentIds == null || attachmentIds.isEmpty() ? null : attachmentIds.get(0));
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId).update(updates).get();
     }
 
-    public void clearPendingAttachment(String sessionId) throws ExecutionException, InterruptedException {
-        // reason: used by the agent after save_attachment consumes the staged file.
-        // Skips the ownership check because the agent has already authorized via principal.
-        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
-                .update("pendingAttachmentId", null).get();
+    public void clearPendingAttachment(String sessionId, String attachmentId)
+            throws ExecutionException, InterruptedException {
+        // reason: used by the agent after save_attachment consumes one of the staged files.
+        // Removes only the matching id so other files in the same turn remain addressable.
+        DocumentSnapshot snap = firestore.collection(SESSIONS_COLLECTION).document(sessionId).get().get();
+        if (!snap.exists()) return;
+        Object raw = snap.get("pendingAttachmentIds");
+        List<String> next = new ArrayList<>();
+        if (raw instanceof List<?> list) {
+            for (Object o : list) {
+                if (o != null && !o.toString().equals(attachmentId)) next.add(o.toString());
+            }
+        }
+        Map<String, Object> updates = new java.util.HashMap<>();
+        updates.put("pendingAttachmentIds", next);
+        Object legacy = snap.get("pendingAttachmentId");
+        if (legacy != null && legacy.toString().equals(attachmentId)) {
+            updates.put("pendingAttachmentId", null);
+        }
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId).update(updates).get();
     }
 
     /** Called by the agent's save_attachment tool when a Drive upload succeeds. */
     public void markRecentlySavedDocument(String sessionId, String documentId)
             throws ExecutionException, InterruptedException {
-        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
-                .update("recentlySavedDocumentId", documentId).get();
+        DocumentSnapshot snap = firestore.collection(SESSIONS_COLLECTION).document(sessionId).get().get();
+        List<String> cur = new ArrayList<>();
+        if (snap.exists()) {
+            Object raw = snap.get("recentlySavedDocumentIds");
+            if (raw instanceof List<?> list) {
+                for (Object o : list) if (o != null) cur.add(o.toString());
+            }
+        }
+        cur.add(documentId);
+        Map<String, Object> updates = new java.util.HashMap<>();
+        updates.put("recentlySavedDocumentIds", cur);
+        updates.put("recentlySavedDocumentId", documentId);
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId).update(updates).get();
     }
 
-    /** Called by ChatController after agent.chat() — returns the id and resets the field. */
-    public String consumeRecentlySavedDocument(String sessionId)
+    /** Called by ChatController after agent.chat() — returns the ids and resets the field. */
+    public List<String> consumeRecentlySavedDocuments(String sessionId)
             throws ExecutionException, InterruptedException {
         DocumentSnapshot snap = firestore.collection(SESSIONS_COLLECTION).document(sessionId).get().get();
-        if (!snap.exists()) return null;
-        Object val = snap.get("recentlySavedDocumentId");
-        if (val == null) return null;
-        firestore.collection(SESSIONS_COLLECTION).document(sessionId)
-                .update("recentlySavedDocumentId", null).get();
-        return val.toString();
+        if (!snap.exists()) return List.of();
+        List<String> out = new ArrayList<>();
+        Object raw = snap.get("recentlySavedDocumentIds");
+        if (raw instanceof List<?> list) {
+            for (Object o : list) if (o != null) out.add(o.toString());
+        } else {
+            Object legacy = snap.get("recentlySavedDocumentId");
+            if (legacy != null) out.add(legacy.toString());
+        }
+        if (out.isEmpty()) return out;
+        Map<String, Object> updates = new java.util.HashMap<>();
+        updates.put("recentlySavedDocumentIds", null);
+        updates.put("recentlySavedDocumentId", null);
+        firestore.collection(SESSIONS_COLLECTION).document(sessionId).update(updates).get();
+        return out;
     }
 
     /** Back-fill an attachmentDocumentId onto an existing message (used after save_attachment). */
@@ -195,6 +245,27 @@ public class ChatSessionService {
             throws ExecutionException, InterruptedException {
         messages(sessionId).document(messageId)
                 .update("attachmentDocumentId", documentId).get();
+    }
+
+    /**
+     * Back-fill documentIds onto a list of attachments already stored on a message.
+     * Pairs each input attachmentId (the Redis-staged id seen by the agent) with the
+     * resulting Drive document id, in order — the agent calls save_attachment once
+     * per file, and recentlySavedDocumentIds preserves that order.
+     */
+    public void backfillMessageAttachments(String sessionId, String messageId,
+                                           List<com.ogautam.kinkeeper.model.ChatAttachment> attachments,
+                                           List<String> savedDocIds)
+            throws ExecutionException, InterruptedException {
+        if (attachments == null || attachments.isEmpty() || savedDocIds == null || savedDocIds.isEmpty()) return;
+        // Assign saved doc ids to attachments that don't already have one, in order.
+        int cursor = 0;
+        for (com.ogautam.kinkeeper.model.ChatAttachment a : attachments) {
+            if (a.getDocumentId() == null && cursor < savedDocIds.size()) {
+                a.setDocumentId(savedDocIds.get(cursor++));
+            }
+        }
+        messages(sessionId).document(messageId).update("attachments", attachments).get();
     }
 
     private void deleteCascade(String sessionId) throws ExecutionException, InterruptedException {
