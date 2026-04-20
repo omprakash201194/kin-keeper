@@ -127,7 +127,7 @@ export default function CategoriesPage() {
       )}
 
       {status && <p className="mb-4 text-sm text-emerald-700">{status}</p>}
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       {tree.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 text-muted-foreground border rounded-md">
@@ -151,7 +151,7 @@ export default function CategoriesPage() {
               {isAdmin && !isDefaultCategory(c) && (
                 <button
                   onClick={() => handleDelete(c)}
-                  className="text-muted-foreground hover:text-red-600"
+                  className="text-muted-foreground hover:text-red-400"
                   title="Delete"
                 >
                   <Trash2 className="w-4 h-4" />

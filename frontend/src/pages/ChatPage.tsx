@@ -353,7 +353,7 @@ export default function ChatPage() {
                   </div>
                   <button
                     onClick={(e) => handleDeleteSession(s.id, e)}
-                    className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-600 transition"
+                    className="md:opacity-0 md:group-hover:opacity-100 text-muted-foreground hover:text-red-400 transition"
                     title="Delete chat"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -455,7 +455,7 @@ export default function ChatPage() {
             </div>
           )}
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-2 text-sm text-red-300">
               {error}
             </div>
           )}
@@ -485,7 +485,7 @@ export default function ChatPage() {
                   </div>
                   <button
                     onClick={() => removeAttachmentAt(i)}
-                    className="text-muted-foreground hover:text-red-600"
+                    className="text-muted-foreground hover:text-red-400"
                     title="Remove attachment"
                   >
                     <X className="w-4 h-4" />

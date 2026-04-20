@@ -23,10 +23,10 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50">
-      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-lg text-center">
-        <Shield className="w-12 h-12 text-emerald-500 mx-auto mb-4" />
-        <h1 className="text-2xl font-bold mb-2">Kin-Keeper</h1>
+    <div className="flex min-h-screen items-center justify-center px-4">
+      <div className="w-full max-w-sm rounded-2xl bg-card/70 border border-white/10 backdrop-blur-md p-8 shadow-2xl text-center">
+        <Shield className="w-12 h-12 text-emerald-400 mx-auto mb-4" />
+        <h1 className="text-3xl font-serif mb-2 text-foreground">Kin-Keeper</h1>
         <p className="text-muted-foreground mb-8">
           Your family's document vault, powered by AI.
         </p>

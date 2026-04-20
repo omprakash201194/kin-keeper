@@ -99,7 +99,7 @@ export default function ContactsPage() {
         </form>
       )}
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       {contacts.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground border rounded-md">No contacts yet.</div>

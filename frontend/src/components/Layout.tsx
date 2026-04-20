@@ -51,13 +51,13 @@ export default function Layout() {
   const sidebar = (
     <>
       {/* Logo */}
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-gray-700">
+      <div className="flex items-center gap-2 px-6 py-5 border-b border-white/10">
         <Shield className="w-6 h-6 text-emerald-400" />
-        <span className="text-lg font-bold tracking-tight">Kin-Keeper</span>
+        <span className="text-lg font-semibold tracking-tight font-serif">Kin-Keeper</span>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {nav.map((item) => {
           const Icon = item.icon
           const showBadge = item.badgeKey === 'reminders' && reminderCount > 0
@@ -71,8 +71,8 @@ export default function Layout() {
                 clsx(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-emerald-600 text-white'
-                    : 'text-gray-400 hover:bg-gray-800 hover:text-white'
+                    ? 'bg-emerald-500/90 text-white shadow-sm'
+                    : 'text-neutral-400 hover:bg-white/5 hover:text-white'
                 )
               }
             >
@@ -89,7 +89,7 @@ export default function Layout() {
       </nav>
 
       {/* User + Logout */}
-      <div className="border-t border-gray-700 px-4 py-4">
+      <div className="border-t border-white/10 px-4 py-4">
         <div className="flex items-center gap-3 mb-3">
           {user?.photoURL ? (
             <img src={user.photoURL} alt="" className="w-8 h-8 rounded-full" />
@@ -100,12 +100,12 @@ export default function Layout() {
           )}
           <div className="flex-1 min-w-0">
             <p className="text-sm font-medium truncate">{user?.displayName}</p>
-            <p className="text-xs text-gray-400 truncate">{user?.email}</p>
+            <p className="text-xs text-neutral-400 truncate">{user?.email}</p>
           </div>
         </div>
         <button
           onClick={handleLogout}
-          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+          className="flex items-center gap-2 w-full px-3 py-2 text-sm text-neutral-400 hover:text-white hover:bg-white/5 rounded-lg transition-colors"
         >
           <LogOut className="w-4 h-4" />
           Sign out
@@ -115,11 +115,11 @@ export default function Layout() {
   )
 
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex h-screen">
       {/* Mobile hamburger */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
-        className="md:hidden fixed top-4 left-4 z-50 p-2 bg-gray-900 text-white rounded-lg"
+        className="md:hidden fixed top-4 left-4 z-50 p-2 rounded-lg bg-black/40 border border-white/10 backdrop-blur-md text-white"
       >
         {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
       </button>
@@ -132,10 +132,12 @@ export default function Layout() {
         />
       )}
 
-      {/* Sidebar — desktop always visible, mobile slide-in */}
+      {/* Sidebar — desktop always visible, mobile slide-in. Translucent so the
+          aurora gradient on body shows through subtly. */}
       <aside
         className={clsx(
-          'w-64 bg-gray-900 text-white flex flex-col z-40',
+          'w-64 text-white flex flex-col z-40',
+          'bg-black/50 backdrop-blur-md border-r border-white/10',
           'fixed md:static inset-y-0 left-0 transition-transform md:translate-x-0',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}

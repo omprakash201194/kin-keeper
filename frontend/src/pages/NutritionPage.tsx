@@ -214,7 +214,7 @@ export default function NutritionPage() {
         )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {members.length === 0 && (
         <p className="text-sm text-muted-foreground border rounded-md p-4">
@@ -255,7 +255,7 @@ export default function NutritionPage() {
 
       {/* Draft review */}
       {draft && (
-        <section className="border-2 border-emerald-400 rounded-md p-4 space-y-3 bg-emerald-50/40">
+        <section className="border border-emerald-500/40 rounded-md p-4 space-y-3 bg-emerald-500/10">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Review before saving</h2>
             <Button variant="ghost" size="icon" onClick={() => setDraft(null)} title="Discard">
@@ -320,7 +320,7 @@ export default function NutritionPage() {
           {draft.healthBenefits.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {draft.healthBenefits.map((b) => (
-                <span key={b} className="text-xs rounded-full bg-emerald-100 text-emerald-900 px-2 py-0.5 flex items-center gap-1">
+                <span key={b} className="text-xs rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/20 px-2 py-0.5 flex items-center gap-1">
                   <Leaf className="w-3 h-3" /> {b}
                 </span>
               ))}
@@ -330,7 +330,7 @@ export default function NutritionPage() {
           {draft.warnings.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {draft.warnings.map((w) => (
-                <span key={w} className="text-xs rounded-full bg-amber-100 text-amber-900 px-2 py-0.5 flex items-center gap-1">
+                <span key={w} className="text-xs rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/20 px-2 py-0.5 flex items-center gap-1">
                   <AlertTriangle className="w-3 h-3" /> {w}
                 </span>
               ))}
@@ -365,7 +365,7 @@ export default function NutritionPage() {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
                           <p className="font-medium truncate">{e.foodName || '(untitled)'}</p>
-                          <span className="text-xs rounded-full bg-gray-100 px-2 py-0.5">{sourceLabel[e.source]}</span>
+                          <span className="text-xs rounded-full bg-white/5 border border-white/10 px-2 py-0.5">{sourceLabel[e.source]}</span>
                           {memberFilter === 'all' && (
                             <span className="text-xs text-muted-foreground">· {memberName(e.memberId)}</span>
                           )}
@@ -383,7 +383,7 @@ export default function NutritionPage() {
                         {e.warnings.length > 0 && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {e.warnings.map((w) => (
-                              <span key={w} className="text-[11px] rounded-full bg-amber-100 text-amber-900 px-1.5 py-0.5">
+                              <span key={w} className="text-[11px] rounded-full bg-amber-500/15 text-amber-300 border border-amber-500/20 px-1.5 py-0.5">
                                 {w}
                               </span>
                             ))}

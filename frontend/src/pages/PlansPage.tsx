@@ -219,7 +219,7 @@ export default function PlansPage() {
         )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {showCreate && (
         <div className="border rounded-md p-4 space-y-3 max-w-2xl">
@@ -393,7 +393,7 @@ function LinkPicker({
             <button
               type="button"
               onClick={() => onChange(links.filter((_, idx) => idx !== i))}
-              className="text-muted-foreground hover:text-red-600"
+              className="text-muted-foreground hover:text-red-400"
             >
               <X className="w-3 h-3" />
             </button>

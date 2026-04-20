@@ -4,31 +4,91 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    /* Warm-tinted near-black base so the aurora gradients feel like they
+       belong to the surface rather than floating over a flat gray. */
+    --background: 20 15% 5%;
+    --foreground: 30 25% 94%;
+
+    /* Card sits just above the body with a hint more warmth. Most cards in
+       the app render over the aurora background, so `bg-card/80` + backdrop
+       blur is the common pattern. */
+    --card: 20 12% 9%;
+    --card-foreground: 30 25% 94%;
+
+    /* Emerald accent matches the sidebar-active state and the logo. */
+    --primary: 160 84% 42%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 20 10% 14%;
+    --secondary-foreground: 30 20% 90%;
+
+    --muted: 20 10% 13%;
+    --muted-foreground: 30 10% 65%;
+
+    --accent: 20 10% 16%;
+    --accent-foreground: 30 25% 94%;
+
+    --destructive: 0 72% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 20 10% 18%;
+    --input: 20 10% 16%;
+    --ring: 160 84% 42%;
+
     --radius: 0.5rem;
+
+    /* Fonts — serif for display headings (h1/h2 on key pages), sans for body. */
+    --font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-serif: 'Fraunces', 'Iowan Old Style', Georgia, serif;
   }
 
   * {
     @apply border-border;
   }
 
+  html, body, #root {
+    height: 100%;
+  }
+
   body {
+    font-family: var(--font-sans);
     @apply bg-background text-foreground antialiased;
+
+    /* Aurora: layered radial gradients pinned to the viewport. Kept subtle so
+       day-to-day pages (lists, forms) still feel legible; HomePage paints its
+       own stronger aurora on top for the hero moment. */
+    background-image:
+      radial-gradient(ellipse 80% 60% at 15% 20%, rgba(236, 72, 153, 0.14), transparent 60%),
+      radial-gradient(ellipse 70% 60% at 85% 15%, rgba(249, 115, 22, 0.12), transparent 60%),
+      radial-gradient(ellipse 90% 70% at 50% 100%, rgba(16, 185, 129, 0.10), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  h1, h2, .font-serif {
+    font-family: var(--font-serif);
+    letter-spacing: -0.01em;
+  }
+
+  /* Inputs/selects/textareas default to dark surfaces so pages don't each need
+     to re-declare bg/text colors. Still overrideable per-element. */
+  input[type='text'],
+  input[type='email'],
+  input[type='password'],
+  input[type='search'],
+  input[type='number'],
+  input[type='date'],
+  input[type='datetime-local'],
+  input[type='url'],
+  input[type='tel'],
+  select,
+  textarea {
+    @apply bg-background/60 text-foreground;
+  }
+
+  /* Native date/time picker indicators are black by default — which reads as a
+     black square on the dark surface. Invert them so they stay visible. */
+  input[type='date']::-webkit-calendar-picker-indicator,
+  input[type='datetime-local']::-webkit-calendar-picker-indicator {
+    filter: invert(0.7);
   }
 }

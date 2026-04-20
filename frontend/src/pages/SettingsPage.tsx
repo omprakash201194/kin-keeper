@@ -175,15 +175,15 @@ export default function SettingsPage() {
         </p>
 
         {!loading && !driveConfigured && (
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
             Server-side Google OAuth is not configured yet. Ask the admin to set up credentials.
           </div>
         )}
 
         {!loading && driveConfigured && (
           driveConnected ? (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm flex items-center justify-between">
-              <span className="text-emerald-900">Connected to Google Drive.</span>
+            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm flex items-center justify-between">
+              <span className="text-emerald-300">Connected to Google Drive.</span>
               <Button variant="outline" size="sm" onClick={handleDisconnectDrive} disabled={driveWorking}>
                 {driveWorking ? 'Working…' : 'Disconnect'}
               </Button>
@@ -238,8 +238,8 @@ export default function SettingsPage() {
         </p>
 
         {!loading && hasApiKey && (
-          <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm flex items-center justify-between">
-            <span className="text-emerald-900">A key is saved. Enter a new one below to replace it.</span>
+          <div className="mb-4 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm flex items-center justify-between">
+            <span className="text-emerald-300">A key is saved. Enter a new one below to replace it.</span>
             <Button variant="outline" size="sm" onClick={handleDeleteKey} disabled={deleting}>
               {deleting ? 'Removing…' : 'Remove'}
             </Button>
@@ -261,7 +261,7 @@ export default function SettingsPage() {
       </section>
 
       {status && <p className="mt-3 text-sm text-emerald-700">{status}</p>}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
     </div>
   )
 }

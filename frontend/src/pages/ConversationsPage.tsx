@@ -427,7 +427,7 @@ export default function ConversationsPage() {
                     <Icon className="w-3 h-3" />
                     {label}
                     <button type="button" onClick={() => removeLink(l.type, l.id)}
-                            className="ml-1 text-muted-foreground hover:text-red-600">
+                            className="ml-1 text-muted-foreground hover:text-red-400">
                       <X className="w-3 h-3" />
                     </button>
                   </span>
@@ -493,7 +493,7 @@ export default function ConversationsPage() {
                         <li key={`${f.name}-${i}`} className="px-2 py-1 flex items-center gap-2">
                           <span className="flex-1 min-w-0 truncate">{f.name}</span>
                           <span className="text-[10px] text-muted-foreground">{Math.round(f.size / 1024)} KB</span>
-                          <button type="button" className="text-muted-foreground hover:text-red-600"
+                          <button type="button" className="text-muted-foreground hover:text-red-400"
                                   onClick={() => setUploadFiles((prev) => prev.filter((_, idx) => idx !== i))}
                                   title="Remove">×</button>
                         </li>
@@ -562,7 +562,7 @@ export default function ConversationsPage() {
                            value={m.at}
                            onChange={(e) => updateMessage(i, { at: e.target.value })} />
                     <button type="button" onClick={() => removeMessage(i)}
-                            className="text-muted-foreground hover:text-red-600">
+                            className="text-muted-foreground hover:text-red-400">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
@@ -583,7 +583,7 @@ export default function ConversationsPage() {
       )}
 
       {status && <p className="mb-4 text-sm text-emerald-700">{status}</p>}
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       {/* List */}
       {conversations.length === 0 ? (

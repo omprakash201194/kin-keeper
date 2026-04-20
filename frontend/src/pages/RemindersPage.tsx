@@ -246,7 +246,7 @@ export default function RemindersPage() {
         </form>
       )}
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       {sortedReminders.length === 0 ? (
         <div className="py-12 text-center text-muted-foreground border rounded-md">
@@ -261,7 +261,7 @@ export default function RemindersPage() {
             const dueSoon = due && due >= now && due <= soon && !r.completed
             return (
               <li key={r.id} className={`px-4 py-3 flex items-start justify-between gap-3 ${
-                overdue ? 'bg-red-50' : dueSoon ? 'bg-amber-50' : ''
+                overdue ? 'bg-red-500/10' : dueSoon ? 'bg-amber-500/10' : ''
               }`}>
                 <div className="min-w-0 flex-1">
                   <p className={`font-medium ${r.completed ? 'line-through text-muted-foreground' : ''}`}>

@@ -163,7 +163,7 @@ export default function MembersPage() {
             {submittingFamily ? 'Creating…' : 'Create Family'}
           </Button>
         </form>
-        {error && <p className="mt-4 text-sm text-red-600">{error}</p>}
+        {error && <p className="mt-4 text-sm text-red-400">{error}</p>}
       </div>
     )
   }
@@ -183,7 +183,7 @@ export default function MembersPage() {
         )}
       </div>
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-red-400">{error}</p>}
 
       {showAddMember && isAdmin && (
         <form onSubmit={handleAddMember} className="max-w-md space-y-3 border rounded-md p-4">

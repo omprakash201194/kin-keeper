@@ -273,7 +273,7 @@ export default function DocumentsPage() {
       </div>
 
       {isAdmin && !canUpload && (
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <div className="mb-4 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
           Add at least one family member before uploading documents.
         </div>
       )}
@@ -323,7 +323,7 @@ export default function DocumentsPage() {
                   <button
                     type="button"
                     onClick={() => removeFileAt(i)}
-                    className="text-muted-foreground hover:text-red-600"
+                    className="text-muted-foreground hover:text-red-400"
                     title="Remove"
                   >
                     <X className="w-4 h-4" />
@@ -457,7 +457,7 @@ export default function DocumentsPage() {
         </div>
       </div>
 
-      {error && <p className="mb-4 text-sm text-red-600">{error}</p>}
+      {error && <p className="mb-4 text-sm text-red-400">{error}</p>}
 
       {documents.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
