@@ -111,6 +111,7 @@ kin-keeper/
 | GET | `/api/documents` | Yes | List documents (filter by member/category) |
 | POST | `/api/documents/upload` | Yes | Upload file to Drive + Firestore metadata |
 | POST | `/api/documents/bulk-upload` | Yes | Upload N files sharing the same member/category/labels/links; returns `{documents, failed}` |
+| POST | `/api/documents/{id}/reindex` | Yes | Re-extract text from an existing document (backfill for docs uploaded before OCR) |
 | GET | `/api/documents/{id}/download` | Yes | Stream file from Drive |
 | POST | `/api/chat/message` | Yes | Send message to AI agent |
 | POST | `/api/family` | Yes | Create family (caller becomes admin) |
@@ -141,7 +142,10 @@ assets/{id}           → Asset (familyId, type: HOME|VEHICLE|APPLIANCE|POLICY, 
                         model, identifier, address, provider, purchaseDate, expiryDate,
                         frequency, amount, odometerKm, ownerMemberIds, linkedAssetIds, notes)
 documents/{id}        → Document (familyId, memberId, categoryId, driveFileId, fileName,
-                        tags, links: List<LinkRef>, uploadedBy, uploadedAt)
+                        tags, links: List<LinkRef>, uploadedBy, uploadedAt,
+                        extractedText, extractedAt — Claude-vision OCR populated
+                        on upload for PDFs/images so search_documents can match
+                        actual contents, not just filename/tags)
 categories/{id}       → Category (familyId, name, parentId, isDefault)
 invites/{id}          → Invite (familyId, email, role, status, createdAt)
 chat_sessions/{id}    → ChatSession (userId, title, expiresAt, pendingAttachmentId)

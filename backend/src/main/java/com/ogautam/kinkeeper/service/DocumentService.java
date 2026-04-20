@@ -33,13 +33,16 @@ public class DocumentService {
     private final DriveService driveService;
     private final FamilyService familyService;
     private final CategoryService categoryService;
+    private final DocumentTextExtractor textExtractor;
 
     public DocumentService(Firestore firestore, DriveService driveService,
-                           FamilyService familyService, CategoryService categoryService) {
+                           FamilyService familyService, CategoryService categoryService,
+                           DocumentTextExtractor textExtractor) {
         this.firestore = firestore;
         this.driveService = driveService;
         this.familyService = familyService;
         this.categoryService = categoryService;
+        this.textExtractor = textExtractor;
     }
 
     public Document uploadDocument(FirebaseUserPrincipal principal,
@@ -54,9 +57,18 @@ public class DocumentService {
                                    List<LinkRef> links)
             throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
         Family family = requireFamily(principal);
+        // reason: buffer the stream once so we can both upload to Drive and hand
+        // the bytes to the text extractor without reading the network stream twice.
+        byte[] bytes = content.readAllBytes();
         List<String> pathSegments = folderPathFor(family.getId(), memberId, categoryId);
         String driveFileId = driveService.uploadFile(
-                family.getAdminUid(), fileName, mimeType, content, pathSegments);
+                family.getAdminUid(), fileName, mimeType,
+                new java.io.ByteArrayInputStream(bytes), pathSegments);
+
+        // Best-effort text extraction via Claude vision. Null when skipped (no
+        // API key, non-extractable mime) or failed — never blocks the upload.
+        String extractedText = textExtractor.tryExtract(principal.uid(), bytes, mimeType, fileName);
+        Instant extractedAt = extractedText != null ? Instant.now() : null;
 
         DocumentReference ref = firestore.collection(DOCUMENTS_COLLECTION).document();
         Document doc = Document.builder()
@@ -73,9 +85,34 @@ public class DocumentService {
                 .links(links != null ? links : List.of())
                 .uploadedBy(principal.uid())
                 .uploadedAt(Instant.now())
+                .extractedText(extractedText)
+                .extractedAt(extractedAt)
                 .build();
         ref.set(doc).get();
-        log.info("Uploaded document {} ({}) for family {} labels={}", ref.getId(), fileName, family.getId(), doc.getTags());
+        log.info("Uploaded document {} ({}) for family {} labels={} extractedText={}chars",
+                ref.getId(), fileName, family.getId(), doc.getTags(),
+                extractedText == null ? 0 : extractedText.length());
+        return doc;
+    }
+
+    /**
+     * Re-extract text from an existing document. Used by the reindex endpoint
+     * to backfill documents uploaded before OCR-on-upload existed.
+     */
+    public Document reindexDocument(FirebaseUserPrincipal principal, String id)
+            throws ExecutionException, InterruptedException, IOException, GeneralSecurityException {
+        Document doc = loadAndAuthorize(principal, id);
+        byte[] bytes = downloadDocument(principal, id);
+        String extractedText = textExtractor.tryExtract(
+                principal.uid(), bytes, doc.getMimeType(), doc.getFileName());
+        Instant extractedAt = extractedText != null ? Instant.now() : null;
+        firestore.collection(DOCUMENTS_COLLECTION).document(id).update(
+                "extractedText", extractedText,
+                "extractedAt", extractedAt).get();
+        doc.setExtractedText(extractedText);
+        doc.setExtractedAt(extractedAt);
+        log.info("Reindexed document {} — extractedText={}chars",
+                id, extractedText == null ? 0 : extractedText.length());
         return doc;
     }
 
@@ -153,6 +190,7 @@ public class DocumentService {
         for (Document d : all) {
             if (contains(d.getFileName(), needle)
                     || contains(d.getNotes(), needle)
+                    || contains(d.getExtractedText(), needle)
                     || tagsContain(d.getTags(), needle)) {
                 hits.add(d);
             }

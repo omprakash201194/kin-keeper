@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
-import { Upload, FileText, Download, Trash2, Camera, FileUp, Sparkles, X } from 'lucide-react'
+import { Upload, FileText, Download, Trash2, Camera, FileUp, Sparkles, X, ScanText } from 'lucide-react'
 import { useRef } from 'react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
@@ -23,6 +23,8 @@ type DocumentRow = {
   categoryId: string
   tags?: string[]
   uploadedAt: string
+  extractedText?: string
+  extractedAt?: string
 }
 
 export default function DocumentsPage() {
@@ -195,6 +197,16 @@ export default function DocumentsPage() {
       URL.revokeObjectURL(url)
     } catch (e: any) {
       setError('Download failed')
+    }
+  }
+
+  async function handleReindex(doc: DocumentRow) {
+    try {
+      setError(null)
+      await apiClient.post(`/documents/${doc.id}/reindex`)
+      await reloadDocuments()
+    } catch (e: any) {
+      setError(e?.response?.data?.error ?? 'Reindex failed')
     }
   }
 
@@ -519,6 +531,16 @@ export default function DocumentsPage() {
           <Button variant="ghost" size="icon" onClick={() => handleDownload(doc)} title="Download">
             <Download className="w-4 h-4" />
           </Button>
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => handleReindex(doc)}
+              title={doc.extractedText ? 'Text indexed — re-extract' : 'Extract text for search'}
+            >
+              <ScanText className={`w-4 h-4 ${doc.extractedText ? 'text-emerald-400' : ''}`} />
+            </Button>
+          )}
           {isAdmin && (
             <Button variant="ghost" size="icon" onClick={() => handleDelete(doc)} title="Delete">
               <Trash2 className="w-4 h-4" />

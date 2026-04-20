@@ -195,6 +195,13 @@ public class DocumentController {
                 .body(new ByteArrayResource(bytes));
     }
 
+    @PostMapping("/{id}/reindex")
+    public ResponseEntity<?> reindex(@AuthenticationPrincipal FirebaseUserPrincipal principal,
+                                     @PathVariable String id) throws Exception {
+        userService.requireAdmin(principal.uid());
+        return ResponseEntity.ok(documentService.reindexDocument(principal, id));
+    }
+
     @DeleteMapping("/{id}")
     public ResponseEntity<?> delete(@AuthenticationPrincipal FirebaseUserPrincipal principal,
                                     @PathVariable String id) throws Exception {

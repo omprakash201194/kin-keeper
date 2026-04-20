@@ -43,3 +43,35 @@ is **not** built yet.
 ### Rough cost
 ~1–2 days for a Leaflet-based v1 (no Google billing), ~0.5 day more for Google
 Maps if we decide the satellite imagery / place search is worth the setup.
+
+## Document ingestion — email forwarding (deferred)
+
+**Status:** deferred; OCR-on-upload shipped, email forwarding did not.
+
+Paperless-ngx has an IMAP consumer that polls a mailbox and auto-ingests every
+attachment. The equivalent here would be: receive email at an address like
+`bills@<your-domain>` and have the backend pick up attachments, run the same
+Claude-vision extraction + classification we already do, and file the result
+under POLICY (or whatever the contents suggest).
+
+### Why it's deferred
+- Needs an inbound mail route (either host an MTA on the homelab, or use a
+  managed webhook like Cloudflare Email Routing / Postmark's inbound / SES
+  inbound). Each has its own DKIM/SPF setup.
+- Per-family addressing (`<familySlug>@kin-keeper.local`) adds another config
+  moving part for what is currently a single-family install.
+
+### What to build when we pick it up
+1. Decide transport: Cloudflare Email Worker → POST to a new `/api/inbound/email`
+   endpoint is probably the least setup for a homelab.
+2. On receipt: parse attachments (MIME-decode), resolve family from the
+   To-address, stage each attachment the way the chat flow does, and kick off
+   the existing classify-and-save chat prompt. User sees the result land on
+   the Documents page with a chat session showing what the agent did.
+3. Keep a dedupe window on Message-ID so a forwarded email doesn't create
+   two copies.
+
+### Non-goals
+- Full IMAP polling. If you're already reading mail, forwarding the relevant
+  ones is fine; we don't need to host a mail client.
+- Outbound email. Kin-Keeper reads, never sends.
