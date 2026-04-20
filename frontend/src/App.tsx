@@ -11,6 +11,7 @@ import AssetsPage from './pages/AssetsPage'
 import RemindersPage from './pages/RemindersPage'
 import NutritionPage from './pages/NutritionPage'
 import PlansPage from './pages/PlansPage'
+import SharePage from './pages/SharePage'
 import SettingsPage from './pages/SettingsPage'
 import Layout from './components/Layout'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -39,6 +40,7 @@ export default function App() {
           <Route path="reminders" element={<RemindersPage />} />
           <Route path="nutrition" element={<NutritionPage />} />
           <Route path="plans" element={<PlansPage />} />
+          <Route path="share" element={<SharePage />} />
           <Route path="settings" element={<SettingsPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

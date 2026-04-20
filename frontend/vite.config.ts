@@ -23,6 +23,22 @@ export default defineConfig({
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
           { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
         ],
+        // reason: lets the installed PWA appear as a share destination on
+        // Android/Chrome. When the user shares text (e.g. an SMS) from another
+        // app, the browser sends a GET to /share with the fields as query
+        // params. The /share route on the frontend reads them, stages a chat,
+        // and navigates into it. File sharing via POST is deferred — it needs
+        // a custom service worker to intercept multipart/form-data; see
+        // ROADMAP.md.
+        share_target: {
+          action: '/share',
+          method: 'GET',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+          },
+        },
       },
       workbox: {
         // reason: don't cache /api/* — auth token freshness and live data matter more
