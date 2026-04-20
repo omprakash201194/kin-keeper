@@ -22,12 +22,6 @@ import java.util.Map;
 @RequestMapping("/api/assets")
 public class AssetController {
 
-    /** Only these fields are writable through update; everything else is rejected silently. */
-    private static final List<String> EDITABLE_FIELDS = List.of(
-            "name", "make", "model", "identifier", "address", "provider",
-            "purchaseDate", "expiryDate", "frequency", "amount", "odometerKm",
-            "ownerMemberIds", "linkedAssetIds", "notes");
-
     private final AssetService assetService;
     private final FamilyService familyService;
     private final UserService userService;
@@ -63,10 +57,25 @@ public class AssetController {
                                         @RequestBody Map<String, Object> body) throws Exception {
         userService.requireAdmin(principal.uid());
         Family family = requireFamily(principal);
+        // reason: same fix pattern as ReminderController.update — normalise through
+        // Jackson so BigDecimal and any future typed fields land as proper Java
+        // objects in Firestore instead of raw JSON primitives.
+        Asset typed = objectMapper.convertValue(body, Asset.class);
         Map<String, Object> updates = new HashMap<>();
-        for (String f : EDITABLE_FIELDS) {
-            if (body.containsKey(f)) updates.put(f, body.get(f));
-        }
+        if (body.containsKey("name"))            updates.put("name",            typed.getName());
+        if (body.containsKey("make"))            updates.put("make",            typed.getMake());
+        if (body.containsKey("model"))           updates.put("model",           typed.getModel());
+        if (body.containsKey("identifier"))      updates.put("identifier",      typed.getIdentifier());
+        if (body.containsKey("address"))         updates.put("address",         typed.getAddress());
+        if (body.containsKey("provider"))        updates.put("provider",        typed.getProvider());
+        if (body.containsKey("purchaseDate"))    updates.put("purchaseDate",    typed.getPurchaseDate());
+        if (body.containsKey("expiryDate"))      updates.put("expiryDate",      typed.getExpiryDate());
+        if (body.containsKey("frequency"))       updates.put("frequency",       typed.getFrequency());
+        if (body.containsKey("amount"))          updates.put("amount",          typed.getAmount());
+        if (body.containsKey("odometerKm"))      updates.put("odometerKm",      typed.getOdometerKm());
+        if (body.containsKey("ownerMemberIds"))  updates.put("ownerMemberIds",  typed.getOwnerMemberIds());
+        if (body.containsKey("linkedAssetIds")) updates.put("linkedAssetIds", typed.getLinkedAssetIds());
+        if (body.containsKey("notes"))           updates.put("notes",           typed.getNotes());
         return ResponseEntity.ok(assetService.update(family.getId(), id, updates));
     }
 

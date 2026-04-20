@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Plus, Trash2, Home, Car, Cpu, Shield } from 'lucide-react'
+import { Plus, Trash2, Home, Car, Cpu, Shield, Pencil } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -62,6 +62,7 @@ export default function AssetsPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => { void load() }, [])
 
@@ -90,13 +91,43 @@ export default function AssetsPage() {
       }
       if (form.amount && form.amount.trim()) body.amount = Number(form.amount)
       if (form.odometerKm && form.odometerKm.trim()) body.odometerKm = parseInt(form.odometerKm, 10)
-      await apiClient.post('/assets', body)
-      setForm(EMPTY_FORM)
-      setShowAdd(false)
+      if (editingId) {
+        await apiClient.put(`/assets/${editingId}`, body)
+      } else {
+        await apiClient.post('/assets', body)
+      }
+      resetForm()
       await load()
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to save asset')
     } finally { setSaving(false) }
+  }
+
+  function handleEdit(a: Asset) {
+    setForm({
+      type: a.type,
+      name: a.name ?? '',
+      make: a.make ?? '',
+      model: a.model ?? '',
+      identifier: a.identifier ?? '',
+      address: a.address ?? '',
+      provider: a.provider ?? '',
+      purchaseDate: a.purchaseDate ?? '',
+      expiryDate: a.expiryDate ?? '',
+      frequency: a.frequency ?? '',
+      amount: a.amount != null ? String(a.amount) : '',
+      odometerKm: a.odometerKm != null ? String(a.odometerKm) : '',
+      notes: a.notes ?? '',
+    })
+    setEditingId(a.id)
+    setShowAdd(true)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function resetForm() {
+    setForm(EMPTY_FORM)
+    setShowAdd(false)
+    setEditingId(null)
   }
 
   async function handleDelete(a: Asset) {
@@ -127,7 +158,7 @@ export default function AssetsPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowAdd((v) => !v)}>
+          <Button onClick={() => (showAdd ? resetForm() : setShowAdd(true))}>
             <Plus className="w-4 h-4 mr-2" />
             {showAdd ? 'Cancel' : 'Add Asset'}
           </Button>
@@ -136,8 +167,11 @@ export default function AssetsPage() {
 
       {showAdd && isAdmin && (
         <form onSubmit={handleSubmit} className="mb-6 space-y-3 border rounded-md p-4">
+          {editingId && (
+            <p className="text-xs text-muted-foreground -mb-1">Editing existing asset.</p>
+          )}
           <div className="grid grid-cols-2 gap-2">
-            <select className="rounded-md border px-3 py-2 text-sm"
+            <select className="rounded-md border px-3 py-2 text-sm" disabled={!!editingId}
                     value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as AssetType })}>
               <option value="HOME">Home</option>
               <option value="VEHICLE">Vehicle</option>
@@ -206,7 +240,14 @@ export default function AssetsPage() {
           <textarea className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Notes" rows={2}
                     value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} />
 
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save'}
+            </Button>
+            {editingId && (
+              <Button type="button" variant="ghost" onClick={resetForm}>Cancel</Button>
+            )}
+          </div>
         </form>
       )}
 
@@ -238,9 +279,14 @@ export default function AssetsPage() {
                       </p>
                     </div>
                     {isAdmin && (
-                      <Button variant="ghost" size="icon" onClick={() => handleDelete(a)} title="Delete">
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" onClick={() => handleEdit(a)} title="Edit">
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" onClick={() => handleDelete(a)} title="Delete">
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     )}
                   </li>
                 ))}
