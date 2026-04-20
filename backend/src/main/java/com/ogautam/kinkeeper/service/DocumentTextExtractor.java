@@ -44,11 +44,14 @@ public class DocumentTextExtractor {
     private static final int MAX_TEXT_LEN = 40_000; // Firestore doc field soft limit is 1MB, be generous but bounded
 
     private final UserService userService;
+    private final ApiUsageService apiUsageService;
     private final String defaultModel;
 
     public DocumentTextExtractor(UserService userService,
+                                 ApiUsageService apiUsageService,
                                  @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.userService = userService;
+        this.apiUsageService = apiUsageService;
         this.defaultModel = defaultModel;
     }
 
@@ -94,6 +97,7 @@ public class DocumentTextExtractor {
                     .build();
 
             Message response = client.messages().create(params);
+            apiUsageService.record(userUid, defaultModel, response.usage());
             String text = collectText(response).trim();
             if (text.isEmpty()) return null;
             if (text.length() > MAX_TEXT_LEN) {

@@ -1,8 +1,49 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/useAuth'
-import { Key, User, Cloud, MessageSquare } from 'lucide-react'
+import { Key, User, Cloud, MessageSquare, LineChart } from 'lucide-react'
 import apiClient from '@/services/api'
+
+type ModelUsage = {
+  model: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+  estimatedCostCents: number
+}
+
+type MonthSummary = {
+  month: string
+  totalCalls: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalCacheWriteTokens: number
+  estimatedCostCents: number
+  byModel: ModelUsage[]
+}
+
+type UsageReport = {
+  currentMonth: MonthSummary
+  lifetimeCalls: number
+  lifetimeInputTokens: number
+  lifetimeOutputTokens: number
+  lifetimeCacheReadTokens: number
+  lifetimeCacheWriteTokens: number
+  lifetimeEstimatedCostCents: number
+}
+
+function fmtCents(cents: number): string {
+  return `$${(cents / 100).toFixed(2)}`
+}
+
+function fmtTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
 
 export default function SettingsPage() {
   const { user } = useAuth()
@@ -23,6 +64,8 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null)
   const [status, setStatus] = useState<string | null>(null)
 
+  const [usage, setUsage] = useState<UsageReport | null>(null)
+
   useEffect(() => {
     // Handle redirect-back from the Drive OAuth callback
     const params = new URLSearchParams(window.location.search)
@@ -38,15 +81,17 @@ export default function SettingsPage() {
 
   async function refresh() {
     try {
-      const [settingsRes, driveRes] = await Promise.all([
+      const [settingsRes, driveRes, usageRes] = await Promise.all([
         apiClient.get<{ hasApiKey: boolean; chatRetentionDays: number }>('/settings'),
         apiClient.get<{ connected: boolean; configured: boolean }>('/drive/status'),
+        apiClient.get<UsageReport>('/settings/usage').catch(() => null),
       ])
       setHasApiKey(settingsRes.data.hasApiKey)
       setChatRetentionDays(settingsRes.data.chatRetentionDays)
       setChatRetentionInput(String(settingsRes.data.chatRetentionDays))
       setDriveConnected(driveRes.data.connected)
       setDriveConfigured(driveRes.data.configured)
+      if (usageRes) setUsage(usageRes.data)
     } catch (e: any) {
       setError(e?.response?.data?.error ?? 'Failed to load settings')
     } finally {
@@ -260,8 +305,69 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* API usage */}
+      {hasApiKey && usage && (
+        <section className="mb-8">
+          <h2 className="flex items-center gap-2 text-lg font-medium mb-4">
+            <LineChart className="w-5 h-5" />
+            Claude API usage
+          </h2>
+          <p className="text-sm text-muted-foreground mb-4">
+            Self-metered from each call's <code>usage</code> block. Cost is an estimate
+            using current per-million-token pricing — check your Anthropic console for
+            the authoritative bill.
+          </p>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <UsageTile label={`This month (${usage.currentMonth.month})`}
+                       value={fmtCents(usage.currentMonth.estimatedCostCents)}
+                       sub={`${usage.currentMonth.totalCalls} call${usage.currentMonth.totalCalls === 1 ? '' : 's'}`} />
+            <UsageTile label="Input tokens"
+                       value={fmtTokens(usage.currentMonth.totalInputTokens)}
+                       sub={usage.currentMonth.totalCacheReadTokens > 0
+                         ? `+ ${fmtTokens(usage.currentMonth.totalCacheReadTokens)} cached`
+                         : undefined} />
+            <UsageTile label="Output tokens"
+                       value={fmtTokens(usage.currentMonth.totalOutputTokens)} />
+            <UsageTile label="Lifetime"
+                       value={fmtCents(usage.lifetimeEstimatedCostCents)}
+                       sub={`${usage.lifetimeCalls} call${usage.lifetimeCalls === 1 ? '' : 's'}`} />
+          </div>
+
+          {usage.currentMonth.byModel.length > 0 && (
+            <div className="border rounded-md overflow-hidden">
+              <div className="px-3 py-2 bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
+                This month by model
+              </div>
+              <ul className="divide-y text-sm">
+                {usage.currentMonth.byModel.map((m) => (
+                  <li key={m.model} className="px-3 py-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <code className="text-xs">{m.model}</code>
+                    <span className="text-muted-foreground text-xs">
+                      in {fmtTokens(m.inputTokens)} · out {fmtTokens(m.outputTokens)}
+                      {m.cacheReadTokens > 0 && ` · cached ${fmtTokens(m.cacheReadTokens)}`}
+                    </span>
+                    <span className="ml-auto font-medium">{fmtCents(m.estimatedCostCents)}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      )}
+
       {status && <p className="mt-3 text-sm text-emerald-700">{status}</p>}
       {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+    </div>
+  )
+}
+
+function UsageTile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+  return (
+    <div className="border rounded-md p-3">
+      <p className="text-xs text-muted-foreground uppercase tracking-wide">{label}</p>
+      <p className="text-lg font-semibold mt-0.5">{value}</p>
+      {sub && <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>}
     </div>
   )
 }

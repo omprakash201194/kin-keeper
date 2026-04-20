@@ -80,15 +80,18 @@ public class NutritionService {
 
     private final Firestore firestore;
     private final UserService userService;
+    private final ApiUsageService apiUsageService;
     private final ObjectMapper objectMapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
             .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
     private final String defaultModel;
 
     public NutritionService(Firestore firestore, UserService userService,
+                            ApiUsageService apiUsageService,
                             @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.firestore = firestore;
         this.userService = userService;
+        this.apiUsageService = apiUsageService;
         this.defaultModel = defaultModel;
     }
 
@@ -195,6 +198,7 @@ public class NutritionService {
                 .build();
 
         Message response = client.messages().create(params);
+        apiUsageService.record(userUid, defaultModel, response.usage());
         String raw = collectText(response).trim();
         log.info("Nutrition analyzer raw response ({} chars): {}",
                 raw.length(), raw.length() > 300 ? raw.substring(0, 300) + "…" : raw);

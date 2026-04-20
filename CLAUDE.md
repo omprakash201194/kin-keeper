@@ -118,6 +118,7 @@ kin-keeper/
 | POST | `/api/family/members` | Yes | Add a family member (person) |
 | POST | `/api/family/invite` | Yes | Invite Google user to family |
 | PUT | `/api/settings/api-key` | Yes | Save encrypted Claude API key |
+| GET | `/api/settings/usage` | Yes | Self-metered Claude API usage + estimated cost (current month + lifetime) |
 | GET/POST/PUT/DELETE | `/api/contacts[/{id}]` | Yes | External contacts CRUD |
 | GET/POST/PUT/DELETE | `/api/assets[/{id}]` | Yes | Asset CRUD (HOME/VEHICLE/APPLIANCE/POLICY) |
 | GET/POST/PUT/DELETE | `/api/reminders[/{id}]` | Yes | Reminder CRUD |
@@ -161,6 +162,13 @@ plans/{id}            → Plan (familyId, name, type: TRIP|EVENT|CELEBRATION|OTH
                         segments: List<PlanSegment {kind, title, location,
                         confirmation, startAt, endAt, documentId, notes}>,
                         links: List<LinkRef>, createdBy, createdAt, updatedAt)
+api_usage/{uid}_{YYYYMM} → monthly rollup of Anthropic API usage (totalCalls,
+                        totalInputTokens, totalOutputTokens, totalCacheReadTokens,
+                        totalCacheWriteTokens, byModel: Map<modelId,
+                        {calls,inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}>).
+                        Written best-effort on every Claude call; cost is derived
+                        at read time from a hardcoded price table so changes in
+                        pricing don't require a migration.
 nutrition/{id}        → NutritionEntry (familyId, memberId, consumedAt, foodName,
                         description, source: PACKAGED|RAW|COOKED|DRINK|OTHER,
                         facts: NutritionFacts (servingDescription + calories/protein/

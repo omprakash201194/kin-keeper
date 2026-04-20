@@ -1,6 +1,7 @@
 package com.ogautam.kinkeeper.controller;
 
 import com.ogautam.kinkeeper.security.FirebaseUserPrincipal;
+import com.ogautam.kinkeeper.service.ApiUsageService;
 import com.ogautam.kinkeeper.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -15,9 +16,16 @@ import java.util.Map;
 public class SettingsController {
 
     private final UserService userService;
+    private final ApiUsageService apiUsageService;
 
-    public SettingsController(UserService userService) {
+    public SettingsController(UserService userService, ApiUsageService apiUsageService) {
         this.userService = userService;
+        this.apiUsageService = apiUsageService;
+    }
+
+    @GetMapping("/usage")
+    public ResponseEntity<?> getUsage(@AuthenticationPrincipal FirebaseUserPrincipal principal) throws Exception {
+        return ResponseEntity.ok(apiUsageService.getReport(principal.uid()));
     }
 
     @GetMapping

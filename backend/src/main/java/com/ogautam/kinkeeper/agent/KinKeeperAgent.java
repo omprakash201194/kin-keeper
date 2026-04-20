@@ -35,6 +35,7 @@ import com.ogautam.kinkeeper.service.ChatSessionService;
 import com.ogautam.kinkeeper.service.ContactService;
 import com.ogautam.kinkeeper.service.ConversationService;
 import com.ogautam.kinkeeper.service.DocumentService;
+import com.ogautam.kinkeeper.service.ApiUsageService;
 import com.ogautam.kinkeeper.service.FamilyService;
 import com.ogautam.kinkeeper.service.NutritionService;
 import com.ogautam.kinkeeper.service.PlanService;
@@ -173,6 +174,7 @@ public class KinKeeperAgent {
     private final ConversationService conversationService;
     private final NutritionService nutritionService;
     private final PlanService planService;
+    private final ApiUsageService apiUsageService;
     private final String defaultModel;
     // reason: Firestore POJOs (FamilyMember, Document) carry java.time.Instant —
     // without JavaTimeModule, writeValueAsString fails with "Java 8 date/time type not supported".
@@ -192,6 +194,7 @@ public class KinKeeperAgent {
                           ConversationService conversationService,
                           NutritionService nutritionService,
                           PlanService planService,
+                          ApiUsageService apiUsageService,
                           @Value("${anthropic.default-model:claude-sonnet-4-6}") String defaultModel) {
         this.documentService = documentService;
         this.familyService = familyService;
@@ -205,6 +208,7 @@ public class KinKeeperAgent {
         this.conversationService = conversationService;
         this.nutritionService = nutritionService;
         this.planService = planService;
+        this.apiUsageService = apiUsageService;
         this.defaultModel = defaultModel;
     }
 
@@ -290,6 +294,7 @@ public class KinKeeperAgent {
             }
 
             Message response = client.messages().create(paramsBuilder.build());
+            apiUsageService.record(principal.uid(), defaultModel, response.usage());
 
             List<ContentBlockParam> assistantBlocks = new ArrayList<>();
             List<ContentBlockParam> toolResults = new ArrayList<>();
