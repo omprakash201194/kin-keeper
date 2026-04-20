@@ -46,6 +46,7 @@ public class CacheConfig {
                         .allowIfSubType("com.ogautam.kinkeeper.model")
                         .allowIfSubType("java.util")
                         .allowIfSubType("java.time")
+                        .allowIfSubType("java.math")
                         .build(),
                 ObjectMapper.DefaultTyping.NON_FINAL,
                 JsonTypeInfo.As.PROPERTY);
