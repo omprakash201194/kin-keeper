@@ -92,4 +92,21 @@
   input[type='datetime-local']::-webkit-calendar-picker-indicator {
     filter: invert(0.7);
   }
+
+  /* Chrome/Edge autofill paints populated fields with a near-white background
+     that overrides our dark surface. Neutralise it by painting a giant inset
+     shadow in the background colour and keeping the text light. The long
+     transition is the standard hack — Chrome respects `background-color` only
+     during the transition, which we push far into the future. */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus,
+  input:-webkit-autofill:active,
+  textarea:-webkit-autofill,
+  select:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px hsl(var(--background)) inset !important;
+    -webkit-text-fill-color: hsl(var(--foreground)) !important;
+    caret-color: hsl(var(--foreground));
+    transition: background-color 9999s ease-in-out 0s;
+  }
 }
