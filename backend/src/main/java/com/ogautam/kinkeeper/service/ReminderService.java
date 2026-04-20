@@ -88,13 +88,33 @@ public class ReminderService {
                             + "or a conversation. Pick one before saving.");
         }
 
+        // Roll forward past-dated recurring reminders to the next future occurrence.
+        // Catches the common case where the agent extracts a historical anchor date
+        // (e.g. subscription renewal last happened Oct 2025) but should fire on the
+        // next cycle. One-off (NONE) reminders are left alone — sometimes a past
+        // date is intentional (logging a missed thing to revisit).
+        Instant effectiveDueAt = form.getDueAt();
+        if (effectiveDueAt != null
+                && recurrence != ReminderRecurrence.NONE
+                && recurrence != ReminderRecurrence.ODOMETER
+                && effectiveDueAt.isBefore(Instant.now())) {
+            Instant advanced = effectiveDueAt;
+            int guard = 0;
+            while (advanced.isBefore(Instant.now()) && guard++ < 240) {
+                advanced = rollForward(advanced, recurrence);
+            }
+            log.info("Reminder dueAt {} was in the past; rolled forward to {} ({})",
+                    effectiveDueAt, advanced, recurrence);
+            effectiveDueAt = advanced;
+        }
+
         DocumentReference ref = firestore.collection(COLLECTION).document();
         Reminder r = Reminder.builder()
                 .id(ref.getId())
                 .familyId(familyId)
                 .title(form.getTitle().trim())
                 .notes(form.getNotes())
-                .dueAt(form.getDueAt())
+                .dueAt(effectiveDueAt)
                 .recurrence(recurrence)
                 .recurrenceIntervalKm(form.getRecurrenceIntervalKm())
                 .dueOdometerKm(form.getDueOdometerKm())

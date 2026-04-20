@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Bell, Plus, Check, Trash2 } from 'lucide-react'
+import { Bell, Plus, Check, Trash2, Pencil } from 'lucide-react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 
@@ -52,6 +52,7 @@ export default function RemindersPage() {
   const [showAdd, setShowAdd] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => { void load() }, [])
 
@@ -101,13 +102,53 @@ export default function RemindersPage() {
         if (!form.dueAt) throw new Error('Due date is required')
         body.dueAt = new Date(form.dueAt).toISOString()
       }
-      await apiClient.post('/reminders', body)
+      if (editingId) {
+        await apiClient.put(`/reminders/${editingId}`, body)
+      } else {
+        await apiClient.post('/reminders', body)
+      }
       setForm(EMPTY_FORM)
       setShowAdd(false)
+      setEditingId(null)
       await load()
     } catch (e: any) {
       setError(e?.response?.data?.error ?? e?.message ?? 'Failed to save reminder')
     } finally { setSaving(false) }
+  }
+
+  function handleEdit(r: Reminder) {
+    // reason: datetime-local input expects YYYY-MM-DDTHH:mm without TZ. Convert
+    // the stored ISO string to the user's local wall-clock so the picker shows
+    // the same moment they'd see on the list.
+    const localDueAt = r.dueAt
+      ? (() => {
+          const d = new Date(r.dueAt)
+          const pad = (n: number) => String(n).padStart(2, '0')
+          return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+        })()
+      : ''
+    const anchor = (r.linkedRefs ?? []).find(
+      (l) => l.type === 'HOME' || l.type === 'VEHICLE' || l.type === 'APPLIANCE' || l.type === 'POLICY'
+    )
+    setForm({
+      title: r.title,
+      notes: r.notes ?? '',
+      dueAt: localDueAt,
+      recurrence: r.recurrence ?? 'NONE',
+      recurrenceIntervalKm: r.recurrenceIntervalKm != null ? String(r.recurrenceIntervalKm) : '',
+      dueOdometerKm: r.dueOdometerKm != null ? String(r.dueOdometerKm) : '',
+      linkType: (anchor?.type as AssetLinkType) ?? '',
+      linkId: anchor?.id ?? '',
+    })
+    setEditingId(r.id)
+    setShowAdd(true)
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function cancelForm() {
+    setForm(EMPTY_FORM)
+    setShowAdd(false)
+    setEditingId(null)
   }
 
   async function handleComplete(r: Reminder) {
@@ -175,7 +216,7 @@ export default function RemindersPage() {
           </p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setShowAdd((v) => !v)}>
+          <Button onClick={() => (showAdd ? cancelForm() : setShowAdd(true))}>
             <Plus className="w-4 h-4 mr-2" />
             {showAdd ? 'Cancel' : 'Add Reminder'}
           </Button>
@@ -184,6 +225,9 @@ export default function RemindersPage() {
 
       {showAdd && isAdmin && (
         <form onSubmit={handleSubmit} className="mb-6 space-y-3 border rounded-md p-4">
+          {editingId && (
+            <p className="text-xs text-muted-foreground -mb-1">Editing existing reminder.</p>
+          )}
           <input className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Title" required
                  value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
           <textarea className="w-full rounded-md border px-3 py-2 text-sm" placeholder="Notes" rows={2}
@@ -242,7 +286,14 @@ export default function RemindersPage() {
             </p>
           )}
 
-          <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : editingId ? 'Save changes' : 'Save'}
+            </Button>
+            {editingId && (
+              <Button type="button" variant="ghost" onClick={cancelForm}>Cancel</Button>
+            )}
+          </div>
         </form>
       )}
 
@@ -291,6 +342,9 @@ export default function RemindersPage() {
                         <Check className="w-4 h-4" />
                       </Button>
                     )}
+                    <Button variant="ghost" size="icon" onClick={() => handleEdit(r)} title="Edit">
+                      <Pencil className="w-4 h-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" onClick={() => handleDelete(r)} title="Delete">
                       <Trash2 className="w-4 h-4" />
                     </Button>

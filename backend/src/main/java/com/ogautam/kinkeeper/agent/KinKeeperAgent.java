@@ -146,7 +146,13 @@ public class KinKeeperAgent {
                    bill amount), expiryDate (the next renewal/due date).
                 3. Always create_reminder linked to that asset with dueAt set
                    to the renewal/due date and recurrence matching the
-                   billing cycle, so the nudge fires every cycle.
+                   billing cycle, so the nudge fires every cycle. The dueAt
+                   MUST be in the future — if the message references a
+                   historical or current date (e.g. "subscribed on Oct 14
+                   2025"), compute the NEXT upcoming cycle from today and
+                   use that. (The server also rolls past dates forward as a
+                   safety net, but do the math yourself so the user sees the
+                   right date in your reply.)
                 4. Ignore marketing fluff and one-time OTP / consent codes —
                    those are not worth storing. Report the asset + reminder
                    you created (or matched) in one short sentence so the user
