@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 import apiClient from '@/services/api'
@@ -43,9 +43,6 @@ export default function HomePage() {
   const [previewUrls, setPreviewUrls] = useState<Array<string | null>>([])
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const fileRef = useRef<HTMLInputElement>(null)
-  const cameraRef = useRef<HTMLInputElement>(null)
 
   const [reminders, setReminders] = useState<ReminderRow[]>([])
   const [plans, setPlans] = useState<PlanRow[]>([])
@@ -236,26 +233,42 @@ export default function HomePage() {
                 </button>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-300">
-                <input ref={fileRef} type="file" multiple className="sr-only"
-                       onChange={(e) => { appendFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }} />
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
-                       onChange={(e) => { appendFiles(e.target.files); if (cameraRef.current) cameraRef.current.value = '' }} />
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 hover:bg-white/10 transition"
-                >
+                {/* reason: <label>-wrapped inputs open the picker natively, which
+                    works on every browser. Refs + programmatic .click() fail
+                    silently on some mobile browsers when the input is
+                    display:none — use labels instead and skip the hidden-click
+                    dance entirely. */}
+                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 hover:bg-white/10 transition">
                   <Paperclip className="w-3.5 h-3.5" />
                   Add files
-                </button>
-                <button
-                  type="button"
-                  onClick={() => cameraRef.current?.click()}
-                  className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 hover:bg-white/10 transition"
-                >
+                  <input
+                    type="file"
+                    multiple
+                    className="sr-only"
+                    onChange={(e) => {
+                      const files = e.target.files
+                      console.info('[HomePage] picked', files?.length ?? 0, 'file(s)')
+                      appendFiles(files)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
+                <label className="cursor-pointer inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5 hover:bg-white/10 transition">
                   <Camera className="w-3.5 h-3.5" />
                   Scan
-                </button>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="sr-only"
+                    onChange={(e) => {
+                      const files = e.target.files
+                      console.info('[HomePage] scanned', files?.length ?? 0, 'file(s)')
+                      appendFiles(files)
+                      e.target.value = ''
+                    }}
+                  />
+                </label>
                 <span className="ml-auto text-[11px] text-neutral-400">
                   Claude Sonnet 4.6 · BYOK
                 </span>

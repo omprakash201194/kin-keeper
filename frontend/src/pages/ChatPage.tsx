@@ -122,8 +122,6 @@ export default function ChatPage() {
   const [error, setError] = useState<string | null>(null)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void loadSessions(true)
@@ -495,41 +493,44 @@ export default function ChatPage() {
             </div>
           )}
           <div className="flex gap-2 items-center">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={sending}
+            {/* reason: label-wrapped file inputs so the picker opens on the
+                natural click path; refs + programmatic .click() can be
+                suppressed on some mobile browsers. */}
+            <label
               title="Attach file"
+              className={`cursor-pointer inline-flex items-center justify-center h-10 w-10 rounded-md hover:bg-accent hover:text-accent-foreground transition ${sending ? 'pointer-events-none opacity-50' : ''}`}
             >
               <Paperclip className="w-4 h-4" />
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={() => cameraInputRef.current?.click()}
-              disabled={sending}
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                disabled={sending}
+                onChange={(e) => {
+                  const files = e.target.files
+                  appendFiles(files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+            <label
               title="Scan with camera"
+              className={`cursor-pointer inline-flex items-center justify-center h-10 w-10 rounded-md hover:bg-accent hover:text-accent-foreground transition ${sending ? 'pointer-events-none opacity-50' : ''}`}
             >
               <Camera className="w-4 h-4" />
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              multiple
-              className="sr-only"
-              onChange={(e) => { appendFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }}
-            />
-            <input
-              ref={cameraInputRef}
-              type="file"
-              accept="image/*"
-              capture="environment"
-              className="sr-only"
-              onChange={(e) => { appendFiles(e.target.files); if (cameraInputRef.current) cameraInputRef.current.value = '' }}
-            />
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                disabled={sending}
+                onChange={(e) => {
+                  const files = e.target.files
+                  appendFiles(files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
             <input
               type="text"
               value={input}

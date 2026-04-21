@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Upload, FileText, Download, Trash2, Camera, FileUp, Sparkles, X, ScanText } from 'lucide-react'
-import { useRef } from 'react'
 import apiClient from '@/services/api'
 import { useProfile } from '@/hooks/useProfile'
 import DocumentThumbnail from '@/components/DocumentThumbnail'
@@ -47,8 +46,6 @@ export default function DocumentsPage() {
   const [uploadLabels, setUploadLabels] = useState('')
   const [uploading, setUploading] = useState(false)
   const [aiSorting, setAiSorting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
   const navigate = useNavigate()
 
   const [error, setError] = useState<string | null>(null)
@@ -306,47 +303,46 @@ export default function DocumentsPage() {
 
       {isAdmin && showUpload && canUpload && (
         <form onSubmit={handleUpload} className="mb-6 max-w-xl space-y-3 border rounded-md p-4">
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => fileInputRef.current?.click()}>
+          <div className="flex flex-wrap gap-2 items-center">
+            {/* reason: <label>-wrapped inputs open the picker natively —
+                programmatic .click() on a ref fails silently on some browsers,
+                most notably when the input is display:none. The input lives
+                inside the label so the label click IS the file-dialog click. */}
+            <label className="cursor-pointer inline-flex items-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition">
               <FileUp className="w-4 h-4 mr-2" />
               Choose files
-            </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => cameraInputRef.current?.click()}>
+              <input
+                type="file"
+                multiple
+                className="sr-only"
+                onChange={(e) => {
+                  const files = e.target.files
+                  appendFiles(files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
+            <label className="cursor-pointer inline-flex items-center rounded-md border border-input bg-background px-3 h-9 text-sm font-medium hover:bg-accent hover:text-accent-foreground transition">
               <Camera className="w-4 h-4 mr-2" />
               Scan document
-            </Button>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="sr-only"
+                onChange={(e) => {
+                  const files = e.target.files
+                  appendFiles(files)
+                  e.target.value = ''
+                }}
+              />
+            </label>
             <span className="text-sm text-muted-foreground self-center truncate">
               {uploadFiles.length === 0
                 ? 'No files selected'
                 : `${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} selected`}
             </span>
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={(e) => {
-              // reason: capture the FileList first — setting value='' clears
-              // e.target.files synchronously on some browsers, so we have to
-              // snapshot before the reset-so-same-file-can-be-picked-again hack.
-              const files = e.target.files
-              appendFiles(files)
-              e.target.value = ''
-            }}
-            className="sr-only"
-          />
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(e) => {
-              const files = e.target.files
-              appendFiles(files)
-              e.target.value = ''
-            }}
-            className="sr-only"
-          />
 
           {uploadFiles.length > 0 && (
             <ul className="divide-y rounded-md border bg-muted/30 text-sm max-h-48 overflow-y-auto">
