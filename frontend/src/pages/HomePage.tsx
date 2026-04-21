@@ -13,6 +13,13 @@ type ReminderRow = { id: string; title: string; dueAt?: string; completed: boole
 type PlanRow = { id: string; name: string; type?: string; startDate?: string; endDate?: string; destination?: string }
 type DocRow = { id: string; fileName: string; uploadedAt?: string; mimeType?: string }
 
+function formatSize(bytes: number): string {
+  if (!bytes || bytes < 0) return '0 B'
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function relativeDate(iso?: string): string {
   if (!iso) return ''
   const d = new Date(iso)
@@ -88,18 +95,8 @@ export default function HomePage() {
 
   function appendFiles(picked: FileList | null) {
     if (!picked || picked.length === 0) return
-    const next = Array.from(picked)
-    setAttachments((prev) => {
-      const merged = [...prev, ...next]
-      console.info('[HomePage] setAttachments', prev.length, '→', merged.length)
-      return merged
-    })
+    setAttachments((prev) => [...prev, ...Array.from(picked)])
   }
-
-  // reason: instrumentation for 'uploads don't work' reports — logs every
-  // render with the current attachments count so we can see whether state
-  // updated but something else hid the chip, or the state never updated.
-  console.info('[HomePage] render — attachments.length =', attachments.length)
 
   function removeAt(i: number) {
     setAttachments((prev) => prev.filter((_, idx) => idx !== i))
@@ -201,7 +198,7 @@ export default function HomePage() {
                       <div className="min-w-0">
                         <p className="truncate font-medium">{f.name}</p>
                         <p className="text-[10px] text-neutral-400">
-                          {(f.type?.split('/')[1]?.toUpperCase() ?? 'FILE')} · {(f.size / (1024 * 1024)).toFixed(1)} MB
+                          {(f.type?.split('/')[1]?.toUpperCase() ?? 'FILE')} · {formatSize(f.size)}
                         </p>
                       </div>
                       <button
@@ -256,9 +253,7 @@ export default function HomePage() {
                     multiple
                     className="sr-only"
                     onChange={(e) => {
-                      const files = e.target.files
-                      console.info('[HomePage] picked', files?.length ?? 0, 'file(s)')
-                      appendFiles(files)
+                      appendFiles(e.target.files)
                       e.target.value = ''
                     }}
                   />
@@ -272,9 +267,7 @@ export default function HomePage() {
                     capture="environment"
                     className="sr-only"
                     onChange={(e) => {
-                      const files = e.target.files
-                      console.info('[HomePage] scanned', files?.length ?? 0, 'file(s)')
-                      appendFiles(files)
+                      appendFiles(e.target.files)
                       e.target.value = ''
                     }}
                   />
