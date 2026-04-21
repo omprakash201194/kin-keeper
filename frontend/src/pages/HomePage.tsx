@@ -88,8 +88,18 @@ export default function HomePage() {
 
   function appendFiles(picked: FileList | null) {
     if (!picked || picked.length === 0) return
-    setAttachments((prev) => [...prev, ...Array.from(picked)])
+    const next = Array.from(picked)
+    setAttachments((prev) => {
+      const merged = [...prev, ...next]
+      console.info('[HomePage] setAttachments', prev.length, '→', merged.length)
+      return merged
+    })
   }
+
+  // reason: instrumentation for 'uploads don't work' reports — logs every
+  // render with the current attachments count so we can see whether state
+  // updated but something else hid the chip, or the state never updated.
+  console.info('[HomePage] render — attachments.length =', attachments.length)
 
   function removeAt(i: number) {
     setAttachments((prev) => prev.filter((_, idx) => idx !== i))
