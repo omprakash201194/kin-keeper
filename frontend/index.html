@@ -12,6 +12,11 @@
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600;700&display=swap"
     />
+    <!-- reason: apple-mobile-web-app-capable is deprecated in favour of the
+         standard mobile-web-app-capable, but iOS Safari still only recognises
+         the apple-prefixed one. Emit both so Chrome stops warning and iOS
+         still treats the PWA as standalone when added to home screen. -->
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Kin-Keeper" />
