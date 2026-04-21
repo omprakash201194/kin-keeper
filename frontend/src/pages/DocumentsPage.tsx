@@ -94,7 +94,10 @@ export default function DocumentsPage() {
 
   function appendFiles(picked: FileList | null) {
     if (!picked || picked.length === 0) return
-    setUploadFiles((prev) => [...prev, ...Array.from(picked)])
+    const next = Array.from(picked)
+    console.info('[DocumentsPage] picked', next.length, 'file(s):', next.map((f) => f.name))
+    setUploadFiles((prev) => [...prev, ...next])
+    setError(null)
   }
 
   function removeFileAt(i: number) {
@@ -322,16 +325,27 @@ export default function DocumentsPage() {
             ref={fileInputRef}
             type="file"
             multiple
-            onChange={(e) => { appendFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }}
-            className="hidden"
+            onChange={(e) => {
+              // reason: capture the FileList first — setting value='' clears
+              // e.target.files synchronously on some browsers, so we have to
+              // snapshot before the reset-so-same-file-can-be-picked-again hack.
+              const files = e.target.files
+              appendFiles(files)
+              e.target.value = ''
+            }}
+            className="sr-only"
           />
           <input
             ref={cameraInputRef}
             type="file"
             accept="image/*"
             capture="environment"
-            onChange={(e) => { appendFiles(e.target.files); if (cameraInputRef.current) cameraInputRef.current.value = '' }}
-            className="hidden"
+            onChange={(e) => {
+              const files = e.target.files
+              appendFiles(files)
+              e.target.value = ''
+            }}
+            className="sr-only"
           />
 
           {uploadFiles.length > 0 && (

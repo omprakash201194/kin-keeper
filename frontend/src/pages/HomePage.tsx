@@ -236,9 +236,9 @@ export default function HomePage() {
                 </button>
               </div>
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-300">
-                <input ref={fileRef} type="file" multiple className="hidden"
+                <input ref={fileRef} type="file" multiple className="sr-only"
                        onChange={(e) => { appendFiles(e.target.files); if (fileRef.current) fileRef.current.value = '' }} />
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden"
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="sr-only"
                        onChange={(e) => { appendFiles(e.target.files); if (cameraRef.current) cameraRef.current.value = '' }} />
                 <button
                   type="button"

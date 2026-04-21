@@ -474,14 +474,14 @@ export default function ConversationsPage() {
                         : `${uploadFiles.length} file${uploadFiles.length > 1 ? 's' : ''} selected`}
                     </span>
                   </div>
-                  <input ref={uploadFileRef} type="file" multiple className="hidden"
+                  <input ref={uploadFileRef} type="file" multiple className="sr-only"
                          onChange={(e) => {
                            const picked = e.target.files
                            if (picked && picked.length > 0) setUploadFiles((prev) => [...prev, ...Array.from(picked)])
                            if (uploadFileRef.current) uploadFileRef.current.value = ''
                          }} />
                   <input ref={uploadCameraRef} type="file" accept="image/*" capture="environment"
-                         className="hidden"
+                         className="sr-only"
                          onChange={(e) => {
                            const picked = e.target.files
                            if (picked && picked.length > 0) setUploadFiles((prev) => [...prev, ...Array.from(picked)])

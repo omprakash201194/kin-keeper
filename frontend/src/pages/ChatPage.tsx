@@ -519,7 +519,7 @@ export default function ChatPage() {
               ref={fileInputRef}
               type="file"
               multiple
-              className="hidden"
+              className="sr-only"
               onChange={(e) => { appendFiles(e.target.files); if (fileInputRef.current) fileInputRef.current.value = '' }}
             />
             <input
@@ -527,7 +527,7 @@ export default function ChatPage() {
               type="file"
               accept="image/*"
               capture="environment"
-              className="hidden"
+              className="sr-only"
               onChange={(e) => { appendFiles(e.target.files); if (cameraInputRef.current) cameraInputRef.current.value = '' }}
             />
             <input

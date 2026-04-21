@@ -200,7 +200,7 @@ export default function NutritionPage() {
               type="file"
               accept="image/*"
               capture="environment"
-              className="hidden"
+              className="sr-only"
               onChange={(e) => {
                 const f = e.target.files?.[0]
                 if (f) void handleFilePicked(f)
