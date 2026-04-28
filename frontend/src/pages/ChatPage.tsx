@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Button } from '@/components/ui/button'
 import { Send, Plus, MessageSquare, Trash2, Paperclip, Camera, X, Menu } from 'lucide-react'
 import apiClient from '@/services/api'
@@ -418,6 +419,11 @@ export default function ChatPage() {
                   )}
                   {msg.role === 'assistant' ? (
                     <ReactMarkdown
+                      // reason: GFM enables tables / strikethrough / task lists /
+                      // autolinks. Claude routinely emits markdown tables for list
+                      // results; without this plugin they render as raw |-separated
+                      // text instead of a proper table.
+                      remarkPlugins={[remarkGfm]}
                       components={{
                         p: ({ children }) => <p className="my-1 first:mt-0 last:mb-0">{children}</p>,
                         ul: ({ children }) => <ul className="list-disc pl-5 my-1 space-y-0.5">{children}</ul>,
@@ -433,6 +439,18 @@ export default function ChatPage() {
                         ),
                         a: ({ href, children }) => (
                           <a href={href} className="underline" target="_blank" rel="noreferrer">{children}</a>
+                        ),
+                        table: ({ children }) => (
+                          <div className="my-2 -mx-1 overflow-x-auto">
+                            <table className="text-xs border-collapse">{children}</table>
+                          </div>
+                        ),
+                        thead: ({ children }) => <thead className="bg-background/40">{children}</thead>,
+                        th: ({ children }) => (
+                          <th className="border border-border px-2 py-1 text-left font-semibold">{children}</th>
+                        ),
+                        td: ({ children }) => (
+                          <td className="border border-border px-2 py-1 align-top">{children}</td>
                         ),
                       }}
                     >
