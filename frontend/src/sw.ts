@@ -15,6 +15,23 @@ cleanupOutdatedCaches()
 self.skipWaiting()
 clientsClaim()
 
+// reason: chicken-and-egg break-out for installed PWAs that are running an
+// older JS bundle. The old bundle has no auto-reload handler, so even after
+// this new SW takes over, the page keeps executing stale code until the user
+// manually refreshes. Once the new SW is in control, post a NEW_VERSION
+// message to every client; the new bundle listens for it (see main.tsx).
+// The old bundle ignores it but at least cleanupOutdatedCaches has already
+// wiped the stale precache by then, so the very next navigation lands on
+// the new HTML + JS automatically.
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    for (const client of allClients) {
+      try { client.postMessage({ type: 'KIN_KEEPER_NEW_VERSION' }) } catch { /* noop */ }
+    }
+  })())
+})
+
 // ---- Push notifications ----
 //
 // The backend sends a JSON payload of { title, body, link }. We render a

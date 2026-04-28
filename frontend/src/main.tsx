@@ -20,6 +20,21 @@ registerSW({
   },
 })
 
+// reason: belt-and-braces — the new SW also posts KIN_KEEPER_NEW_VERSION
+// to every client when it activates, so even bundles that registered the
+// SW through the legacy registerSW.js (and therefore don't get
+// onNeedRefresh fired) still get a chance to reload. Once we hear it,
+// reload exactly once per page lifetime.
+if ('serviceWorker' in navigator) {
+  let reloadedFromMessage = false
+  navigator.serviceWorker.addEventListener('message', (event) => {
+    if (event.data?.type === 'KIN_KEEPER_NEW_VERSION' && !reloadedFromMessage) {
+      reloadedFromMessage = true
+      window.location.reload()
+    }
+  })
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 30_000 },
