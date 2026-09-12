@@ -476,15 +476,15 @@ export default function ConversationsPage() {
                   </div>
                   <input ref={uploadFileRef} type="file" multiple className="sr-only"
                          onChange={(e) => {
-                           const picked = e.target.files
-                           if (picked && picked.length > 0) setUploadFiles((prev) => [...prev, ...Array.from(picked)])
+                           const snapshot = e.target.files ? Array.from(e.target.files) : []
+                           if (snapshot.length > 0) setUploadFiles((prev) => [...prev, ...snapshot])
                            if (uploadFileRef.current) uploadFileRef.current.value = ''
                          }} />
                   <input ref={uploadCameraRef} type="file" accept="image/*" capture="environment"
                          className="sr-only"
                          onChange={(e) => {
-                           const picked = e.target.files
-                           if (picked && picked.length > 0) setUploadFiles((prev) => [...prev, ...Array.from(picked)])
+                           const snapshot = e.target.files ? Array.from(e.target.files) : []
+                           if (snapshot.length > 0) setUploadFiles((prev) => [...prev, ...snapshot])
                            if (uploadCameraRef.current) uploadCameraRef.current.value = ''
                          }} />
                   {uploadFiles.length > 0 && (

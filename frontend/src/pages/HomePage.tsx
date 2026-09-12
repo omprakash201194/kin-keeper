@@ -95,7 +95,12 @@ export default function HomePage() {
 
   function appendFiles(picked: FileList | null) {
     if (!picked || picked.length === 0) return
-    setAttachments((prev) => [...prev, ...Array.from(picked)])
+    // reason: snapshot to a real array NOW. The caller clears the input
+    // (e.target.value = '') right after this returns, which empties the live
+    // FileList before React's lazy setState updater runs — so referencing
+    // `picked` inside the updater would see zero files.
+    const snapshot = Array.from(picked)
+    setAttachments((prev) => [...prev, ...snapshot])
   }
 
   function removeAt(i: number) {
